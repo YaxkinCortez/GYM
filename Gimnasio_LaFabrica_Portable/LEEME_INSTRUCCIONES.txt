@@ -1,0 +1,105 @@
+====================================================================
+  GIMNASIO LA FÁBRICA - SISTEMA DESKTOP PORTABLE (SQLite3 + PDO)
+====================================================================
+
+¡Proyecto 100% Desacoplado de MySQL y XAMPP!
+Ahora corre con un único archivo de base de datos embebido (database/gimnasio.sqlite)
+y se ejecuta como una aplicación de escritorio nativa independiente.
+
+--------------------------------------------------------------------
+1. ¿CÓMO INICIAR EL SISTEMA EN WINDOWS?
+--------------------------------------------------------------------
+Tienes dos opciones de inicio:
+   👉 iniciar_gimnasio.vbs  <- 100% Silencioso (Cero ventanas de consola)
+   👉 iniciar_gimnasio.bat  <- Inicia el servidor en segundo plano y cierra la consola automáticamente
+
+El script automáticamente:
+  1. Detecta tu PHP (busca en \php\, PATH de Windows, o en C:\xampp\php\).
+  2. Levanta el servidor local en segundo plano en http://127.0.0.1:8080.
+  3. Abre la ventana de escritorio independiente en el Login.
+  4. La consola de comandos se cierra automáticamente para evitar que el usuario la cierre por accidente.
+
+Para apagar el sistema al finalizar la jornada:
+   👉 Haz doble clic en: detener_gimnasio.bat
+
+--------------------------------------------------------------------
+2. CREDENCIALES DE INICIO DE SESIÓN
+--------------------------------------------------------------------
+- Administrador (Acceso total a reportes, usuarios, balance, respaldos):
+  Usuario:     admin@gimnasio.local
+  Contraseña:  admin123
+
+- Cajero / Recepción (Acceso a ventas, clientes, visitas, inventario):
+  Usuario:     carlos@gimnasio.local
+  Contraseña:  user123
+
+--------------------------------------------------------------------
+3. ¿QUÉ HACER SI NO TIENES PHP EN TU EQUIPO?
+--------------------------------------------------------------------
+Haz doble clic en:
+   👉 descargar_php_portable.bat
+Descargará e instalará automáticamente PHP portable oficial para Windows (25 MB)
+dentro de la carpeta \php\ en 15 segundos.
+
+--------------------------------------------------------------------
+4. MÓDULOS Y NUEVAS FUNCIONALIDADES DESTACADAS
+--------------------------------------------------------------------
+- Visitas y Accesos (pages/visitas.php):
+  * Check-in de socios con semáforo de vigencia.
+  * Cobro de Visita Temporal / Pase Diario con campo para registrar el nombre del cliente y botón vinculado dinámicamente al precio del plan diario.
+
+- Tienda y Ventas POS (pages/ventas.php):
+  * Barra de búsqueda predictiva en tiempo real optimizada para catálogos de más de 300 clientes.
+  * Soporte de compras "A Crédito / Deuda Pendiente" para fiar productos a los socios registrados.
+  * Folios únicos autoincrementables con formato #0001 y desglose contable entre productos internos y externos.
+
+- Gestión de Clientes (pages/clientes.php):
+  * Botón "Info" en cada socio que abre la Ficha Completa con:
+    1. Datos personales y contacto.
+    2. Estado actual de membresía (Activo / Vencido) y días restantes.
+    3. Historial de todas las membresías compradas.
+    4. Estado de deudas con detalle de saldo atrasado y enlace directo a Abonos.
+  * Alerta automática si el cliente cuenta con deuda atrasada al abrir el formulario de edición o al seleccionar renovar membresía.
+
+- Módulo de Abonos y Deudas (pages/abonos.php):
+  * Consulta centralizada de deudas pendientes y liquidadas.
+  * Registro de abonos parciales o liquidación total con 1 solo clic.
+  * Generación de comprobante imprimible de abono para el cliente.
+
+--------------------------------------------------------------------
+5. ESTRUCTURA DE ARCHIVOS Y CARPETAS
+--------------------------------------------------------------------
+/
+├── iniciar_gimnasio.vbs          <- Lanzador 100% silencioso (sin ventana CMD)
+├── iniciar_gimnasio.bat          <- Lanzador con verificación robusta de puerto
+├── detener_gimnasio.bat          <- Detiene el servidor y libera el puerto 8080
+├── descargar_php_portable.bat    <- Descarga e instala PHP portable (25 MB)
+├── iniciar_gimnasio.sh           <- Lanzador para Linux / macOS
+├── router.php                    <- Router del servidor embebido de PHP
+├── index.php / login.php         <- Punto de entrada y autenticación
+├── logout.php                    <- Cierre seguro de sesión
+├── database/
+│   ├── schema.sqlite.sql         <- Estructura DDL SQLite con claves foráneas
+│   └── gimnasio.sqlite           <- Base de datos embebida (se auto-crea)
+├── includes/
+│   ├── config.php                <- Conexión PDO SQLite (WAL mode y claves foráneas)
+│   ├── navbar.php                <- Barra de navegación superior
+│   └── sidebar.php               <- Menú lateral con permisos por rol
+├── pages/
+│   ├── abonos.php                <- Módulo de abonos y liquidación de deudas
+│   ├── balance.php               <- Balance financiero
+│   ├── clientes.php              <- Socios, fichas completas y alertas de adeudo
+│   ├── dashboard.php             <- Panel principal con métricas e ingresos
+│   ├── gastos.php                <- Registro de egresos
+│   ├── historial_membresias.php  <- Histórico de compras de planes
+│   ├── historial_ventas.php      <- Histórico de ventas en tienda
+│   ├── membresias.php            <- Catálogo de planes y costos
+│   ├── productos.php             <- Inventario y productos externos
+│   ├── reportes.php              <- Reportes contables y exportación CSV
+│   ├── respaldos.php             <- Copias de seguridad de SQLite
+│   ├── tablas.php                <- Editor administrativo de tablas
+│   ├── usuarios.php              <- Control de usuarios del sistema
+│   ├── ventas.php                <- Tienda POS con buscador de 300+ clientes y crédito
+│   └── visitas.php               <- Torniquete y cobro dinámico de pases diarios
+└── css/
+    └── style.css                 <- Estilos visuales
