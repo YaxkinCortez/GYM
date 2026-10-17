@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reportes y Estadísticas - Gimnasio La Fabrica</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <%- include('partials/navbar') %>
+    <div class="container-fluid">
+        <div class="row">
+            <%- include('partials/sidebar') %>
+            <main class="col-md-10 ms-sm-auto px-md-4 main-content">
+                <div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div>
+                        <h1><i class="fas fa-file-alt me-2"></i>Reportes Contables y Exportación</h1>
+                        <p class="text-muted mb-0 small">Filtros por fecha, tipos de transacción y descarga en formato CSV para Excel</p>
+                    </div>
+                </div>
+
+                <div class="card mb-4 shadow-sm">
+                    <div class="card-body">
+                        <form method="GET" action="/pages/reportes.php" class="row g-3 align-items-end">
+                            <div class="col-md-3">
+                                <label class="form-label small fw-bold">Tipo de Reporte:</label>
+                                <select name="tipo" class="form-select">
+                                    <option value="global_sales" <%= tipo === 'global_sales' ? 'selected' : '' %>>Ventas Globales</option>
+                                    <option value="ventas_internas" <%= tipo === 'ventas_internas' ? 'selected' : '' %>>Productos Internos</option>
+                                    <option value="ventas_externas" <%= tipo === 'ventas_externas' ? 'selected' : '' %>>Productos Externos</option>
+                                    <option value="membresias" <%= tipo === 'membresias' ? 'selected' : '' %>>Ventas de Membresías</option>
+                                    <option value="visitas_temp" <%= tipo === 'visitas_temp' ? 'selected' : '' %>>Pases Diarios</option>
+                                    <option value="gastos" <%= tipo === 'gastos' ? 'selected' : '' %>>Gastos Operativos</option>
+                                    <option value="abonos" <%= tipo === 'abonos' ? 'selected' : '' %>>Abonos Recibidos</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label small fw-bold">Fecha Inicio:</label>
+                                <input type="date" name="fecha_inicio" class="form-control" value="<%= inicio %>">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label small fw-bold">Fecha Fin:</label>
+                                <input type="date" name="fecha_fin" class="form-control" value="<%= fin %>">
+                            </div>
+                            <div class="col-md-3 d-flex gap-2">
+                                <button type="submit" class="btn btn-primary flex-grow-1"><i class="fas fa-search me-1"></i> Filtrar</button>
+                                <a href="/pages/reportes.php?tipo=<%= tipo %>&fecha_inicio=<%= inicio %>&fecha_fin=<%= fin %>&export=csv" class="btn btn-success"><i class="fas fa-file-csv me-1"></i> Descargar CSV</a>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="card shadow-sm">
+                    <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                        <span class="fw-bold"><i class="fas fa-table me-2"></i>Resultados del Reporte (<%= registros.length %> registros)</span>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <% columnas.forEach(function(col) { %>
+                                        <th><%= col %></th>
+                                    <% }); %>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <% if (registros.length === 0) { %>
+                                    <tr><td colspan="<%= columnas.length %>" class="text-center py-4 text-muted">No se encontraron registros en el rango seleccionado.</td></tr>
+                                <% } else { %>
+                                    <% registros.forEach(function(fila) { %>
+                                    <tr>
+                                        <% fila.forEach(function(celda) { %>
+                                            <td><%= celda %></td>
+                                        <% }); %>
+                                    </tr>
+                                    <% }); %>
+                                <% } %>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

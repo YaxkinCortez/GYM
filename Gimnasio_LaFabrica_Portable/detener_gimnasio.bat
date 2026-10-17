@@ -1,5 +1,5 @@
 @echo off
-chcp 65001 >nul
+:: codepage standard
 title Cerrar Servidor Gimnasio La Fabrica
 cd /d "%~dp0"
 

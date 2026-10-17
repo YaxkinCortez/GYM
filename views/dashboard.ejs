@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel de Control - Gimnasio La Fábrica</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <%- include('partials/navbar') %>
+    <div class="container-fluid">
+        <div class="row">
+            <%- include('partials/sidebar') %>
+            <main class="col-md-10 ms-sm-auto px-md-4 main-content">
+                <div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div>
+                        <h1><i class="fas fa-chart-line me-2"></i>Panel de Control</h1>
+                        <p class="text-muted mb-0 small">Resumen general y métricas en tiempo real</p>
+                    </div>
+                    <span class="badge bg-secondary font-monospace fs-6"><%= fechaActual %></span>
+                </div>
+
+                <!-- FILA 1: INGRESOS Y VENTAS DEL DÍA -->
+                <div class="mb-4">
+                    <h5 class="fw-bold text-dark mb-3"><i class="fas fa-coins me-2 text-warning"></i>Ingresos y Ventas de Hoy</h5>
+                    <div class="row g-3">
+                        <div class="col-xl-3 col-md-6">
+                            <div class="stat-card border-start border-4 border-primary h-100 shadow-sm text-start">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <small class="text-muted text-uppercase fw-bold">Prod. Internos</small>
+                                        <h3 class="text-primary my-1">$<%= ingProductosInternos.toFixed(2) %></h3>
+                                        <small class="text-muted">Tienda propia</small>
+                                    </div>
+                                    <div class="bg-primary-subtle text-primary p-3 rounded-circle fs-4">
+                                        <i class="fas fa-box"></i>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-xl-3 col-md-6">
+                            <div class="stat-card border-start border-4 border-info h-100 shadow-sm text-start">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <small class="text-muted text-uppercase fw-bold">Prod. Externos</small>
+                                        <h3 class="text-info my-1">$<%= ingProductosExternos.toFixed(2) %></h3>
+                                        <small class="text-muted">Concesiones</small>
+                                    </div>
+                                    <div class="bg-info-subtle text-info p-3 rounded-circle fs-4">
+                                        <i class="fas fa-store"></i>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-xl-3 col-md-6">
+                            <div class="stat-card border-start border-4 border-success h-100 shadow-sm text-start">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <small class="text-muted text-uppercase fw-bold">Membresías</small>
+                                        <h3 class="text-success my-1">$<%= ingresosMembresias.toFixed(2) %></h3>
+                                        <small class="text-muted">Planes del gimnasio</small>
+                                    </div>
+                                    <div class="bg-success-subtle text-success p-3 rounded-circle fs-4">
+                                        <i class="fas fa-id-card"></i>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-xl-3 col-md-6">
+                            <div class="stat-card border-start border-4 border-warning h-100 shadow-sm text-start">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <small class="text-muted text-uppercase fw-bold">Pases Diarios</small>
+                                        <h3 class="text-warning my-1">$<%= ingresosPasesDiarios.toFixed(2) %></h3>
+                                        <small class="text-muted">Visitas temporales</small>
+                                    </div>
+                                    <div class="bg-warning-subtle text-warning p-3 rounded-circle fs-4">
+                                        <i class="fas fa-ticket-alt"></i>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- FILA 2: METRICAS CLAVE -->
+                <div class="row g-3 mb-4">
+                    <div class="col-md-3">
+                        <div class="card p-3 shadow-sm border-0 bg-white">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <span class="text-muted small">Total Ingreso Hoy</span>
+                                    <h4 class="fw-bold text-dark mt-1">$<%= ingresoHoy.toFixed(2) %></h4>
+                                </div>
+                                <i class="fas fa-cash-register text-success fs-3"></i>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card p-3 shadow-sm border-0 bg-white">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <span class="text-muted small">Visitas Hoy</span>
+                                    <h4 class="fw-bold text-dark mt-1"><%= visitasHoy %> <small class="text-muted fs-6">(<%= visitasClientes %> socios)</small></h4>
+                                </div>
+                                <i class="fas fa-door-open text-primary fs-3"></i>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card p-3 shadow-sm border-0 bg-white">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <span class="text-muted small">Socios Activos</span>
+                                    <h4 class="fw-bold text-success mt-1"><%= clientesActivos %> / <%= totalClientes %></h4>
+                                </div>
+                                <i class="fas fa-users text-info fs-3"></i>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card p-3 shadow-sm border-0 bg-white">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <span class="text-muted small">Existencias Bajas</span>
+                                    <h4 class="fw-bold <%= bajoStock > 0 ? 'text-danger' : 'text-secondary' %> mt-1"><%= bajoStock %> productos</h4>
+                                </div>
+                                <i class="fas fa-exclamation-triangle <%= bajoStock > 0 ? 'text-danger' : 'text-secondary' %> fs-3"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- FILA 3: LISTADOS DE ESTADO -->
+                <div class="row g-4">
+                    <!-- Por vencer -->
+                    <div class="col-lg-6">
+                        <div class="card shadow-sm h-100">
+                            <div class="card-header bg-warning-subtle text-warning-emphasis fw-bold d-flex justify-content-between align-items-center">
+                                <span><i class="fas fa-clock me-2"></i>Membresías por Vencer (1 a 5 días)</span>
+                                <span class="badge bg-warning text-dark"><%= listaPorVencer.length %></span>
+                            </div>
+                            <div class="card-body p-0">
+                                <% if (listaPorVencer.length === 0) { %>
+                                    <div class="p-4 text-center text-muted">No hay membresías próximas a vencer en los siguientes 5 días.</div>
+                                <% } else { %>
+                                    <div class="table-responsive">
+                                        <table class="table table-hover align-middle mb-0">
+                                            <thead class="table-light">
+                                                <tr><th>Socio</th><th>Plan</th><th>Vence</th><th>Días</th></tr>
+                                            </thead>
+                                            <tbody>
+                                                <% listaPorVencer.forEach(function(item) { %>
+                                                <tr>
+                                                    <td class="fw-bold"><%= item.fullName %></td>
+                                                    <td><%= item.membership_name %></td>
+                                                    <td><%= item.endDate %></td>
+                                                    <td><span class="badge bg-warning text-dark"><%= item.dias %> días</span></td>
+                                                </tr>
+                                                <% }); %>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                <% } %>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Vencidas -->
+                    <div class="col-lg-6">
+                        <div class="card shadow-sm h-100">
+                            <div class="card-header bg-danger-subtle text-danger fw-bold d-flex justify-content-between align-items-center">
+                                <span><i class="fas fa-times-circle me-2"></i>Membresías Vencidas</span>
+                                <span class="badge bg-danger"><%= listaVencidas.length %></span>
+                            </div>
+                            <div class="card-body p-0">
+                                <% if (listaVencidas.length === 0) { %>
+                                    <div class="p-4 text-center text-muted">No hay socios con membresía vencida.</div>
+                                <% } else { %>
+                                    <div class="table-responsive">
+                                        <table class="table table-hover align-middle mb-0">
+                                            <thead class="table-light">
+                                                <tr><th>Socio</th><th>Plan</th><th>Venció</th><th>Hace</th></tr>
+                                            </thead>
+                                            <tbody>
+                                                <% listaVencidas.forEach(function(item) { %>
+                                                <tr>
+                                                    <td class="fw-bold"><%= item.fullName %></td>
+                                                    <td><%= item.membership_name %></td>
+                                                    <td><%= item.endDate %></td>
+                                                    <td><span class="badge bg-danger">Hace <%= item.dias %> días</span></td>
+                                                </tr>
+                                                <% }); %>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                <% } %>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ALERTA BAJO STOCK SI EXISTE -->
+                <% if (listaBajoStock.length > 0) { %>
+                <div class="card shadow-sm border-danger mt-4">
+                    <div class="card-header bg-danger text-white fw-bold">
+                        <i class="fas fa-exclamation-triangle me-2"></i>Alerta de Inventario: Productos con Existencias Bajas
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover mb-0">
+                                <thead class="table-light">
+                                    <tr><th>Producto</th><th>Existencia Actual</th><th>Existencia Mínima</th><th>Estado</th></tr>
+                                </thead>
+                                <tbody>
+                                    <% listaBajoStock.forEach(function(p) { %>
+                                    <tr>
+                                        <td class="fw-bold"><%= p.name %></td>
+                                        <td><span class="badge bg-danger"><%= p.quantity %> uds.</span></td>
+                                        <td><%= p.minStock %> uds.</td>
+                                        <td><span class="text-danger small fw-bold">Reponer urgentemente</span></td>
+                                    </tr>
+                                    <% }); %>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <% } %>
+            </main>
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Respaldos - Gimnasio La Fabrica</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <%- include('partials/navbar') %>
+    <div class="container-fluid">
+        <div class="row">
+            <%- include('partials/sidebar') %>
+            <main class="col-md-10 ms-sm-auto px-md-4 main-content">
+                <div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div>
+                        <h1><i class="fas fa-database me-2"></i>Respaldos y Copias de Seguridad</h1>
+                        <p class="text-muted mb-0 small">Exportación y descarga instantánea de la base de datos</p>
+                    </div>
+                </div>
+
+                <% if (mensaje) { %>
+                    <div class="alert alert-success alert-dismissible fade show">
+                        <%= mensaje %>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                <% } %>
+
+                <div class="row g-4">
+                    <div class="col-md-6">
+                        <div class="card shadow-sm h-100">
+                            <div class="card-header bg-primary text-white fw-bold">
+                                <i class="fas fa-download me-2"></i>Generar Respaldo Inmediato
+                            </div>
+                            <div class="card-body">
+                                <p class="text-muted">Descarga una copia completa de la base de datos y catálogo de datos en formato JSON para resguardo seguro.</p>
+                                <form method="POST" action="/pages/respaldos.php" class="mb-3">
+                                    <input type="hidden" name="accion" value="descargar_json">
+                                    <button type="submit" class="btn btn-outline-primary w-100 py-2 fw-bold">
+                                        <i class="fas fa-file-download me-1"></i> Descargar Datos en JSON
+                                    </button>
+                                </form>
+
+                                <form method="POST" action="/pages/respaldos.php">
+                                    <input type="hidden" name="accion" value="descargar_zip">
+                                    <button type="submit" class="btn btn-success w-100 py-2 fw-bold shadow-sm">
+                                        <i class="fas fa-file-zipper me-1"></i> Descargar Proyecto Completo (.zip)
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card shadow-sm h-100">
+                            <div class="card-header bg-light fw-bold">
+                                <i class="fas fa-shield-alt me-2"></i>Estado del Almacenamiento
+                            </div>
+                            <div class="card-body">
+                                <ul class="list-group list-group-flush">
+                                    <li class="d-flex justify-content-between py-2">
+                                        <span>Motor de Base de Datos:</span>
+                                        <strong class="text-primary">En memoria + Exportable</strong>
+                                    </li>
+                                    <li class="d-flex justify-content-between py-2">
+                                        <span>Estado del Servicio:</span>
+                                        <span class="badge bg-success">Activo y Operativo</span>
+                                    </li>
+                                    <li class="d-flex justify-content-between py-2">
+                                        <span>Último Respaldo Generado:</span>
+                                        <span class="text-muted small"><%= fechaActual %></span>
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

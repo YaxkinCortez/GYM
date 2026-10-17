@@ -1,0 +1,6 @@
+{
+  "name": "Gimnasio La Fabrica",
+  "description": "Sistema de gestión y punto de venta para gimnasio con control de socios, membresías, visitas, inventario y finanzas.",
+  "permissions": [],
+  "capabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inventario y Productos - Gimnasio La Fabrica</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <%- include('partials/navbar') %>
+    <div class="container-fluid">
+        <div class="row">
+            <%- include('partials/sidebar') %>
+            <main class="col-md-10 ms-sm-auto px-md-4 main-content">
+                <div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div>
+                        <h1><i class="fas fa-box me-2"></i>Inventario y Productos</h1>
+                        <p class="text-muted mb-0 small">Catálogo de productos internos y externos, alertas de existencias mínimas y ajustes rápidos</p>
+                    </div>
+                    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalNuevoProducto">
+                        <i class="fas fa-plus me-1"></i> Nuevo Producto
+                    </button>
+                </div>
+
+                <% if (mensaje) { %>
+                    <div class="alert alert-<%= tipo_mensaje %> alert-dismissible fade show">
+                        <%- mensaje %>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                <% } %>
+
+                <!-- BARRA DE ESCANEO DE CÓDIGO DE BARRAS -->
+                <div class="card shadow-sm mb-4 bg-light border">
+                    <div class="card-body py-2">
+                        <form method="POST" action="/pages/productos.php" class="row g-2 align-items-center">
+                            <input type="hidden" name="accion" value="escanear_codigo">
+                            <div class="col-md-9">
+                                <div class="input-group">
+                                    <span class="input-group-text bg-white"><i class="fas fa-barcode"></i></span>
+                                    <input type="text" name="barcode" class="form-control" placeholder="Escanear o ingresar código de barras para sumar +1 unidad rápidamente..." autofocus>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <button type="submit" class="btn btn-dark w-100"><i class="fas fa-plus-circle me-1"></i> Entrada +1</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- TABLA DE PRODUCTOS -->
+                <div class="card shadow-sm">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>#</th>
+                                    <th>Producto</th>
+                                    <th>Código</th>
+                                    <th>Tipo</th>
+                                    <th>P. Compra</th>
+                                    <th>P. Venta</th>
+                                    <th class="text-center">Existencia</th>
+                                    <th>Mínimo</th>
+                                    <th class="text-end">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <% if (productos.length === 0) { %>
+                                    <tr><td colspan="9" class="text-center py-4 text-muted">No hay productos registrados en el inventario.</td></tr>
+                                <% } else { %>
+                                    <% productos.forEach(function(p) { %>
+                                    <tr class="<%= p.quantity <= p.minStock ? 'table-warning' : '' %>">
+                                        <td><span class="badge bg-light text-dark border">#<%= p.id %></span></td>
+                                        <td class="fw-bold">
+                                            <%= p.name %>
+                                            <% if (p.quantity <= p.minStock) { %>
+                                                <span class="badge bg-danger ms-1" title="Existencias bajas"><i class="fas fa-exclamation-triangle"></i></span>
+                                            <% } %>
+                                        </td>
+                                        <td><code><%= p.barcode || 'S/N' %></code></td>
+                                        <td>
+                                            <span class="badge <%= p.isExternal ? 'bg-info text-dark' : 'bg-primary' %>">
+                                                <%= p.isExternal ? 'Externo' : 'Interno' %>
+                                            </span>
+                                        </td>
+                                        <td>$<%= p.purchasePrice.toFixed(2) %></td>
+                                        <td class="fw-bold text-success">$<%= p.salePrice.toFixed(2) %></td>
+                                        <td class="text-center">
+                                            <div class="d-inline-flex align-items-center gap-1">
+                                                <form method="POST" action="/pages/productos.php" class="m-0 d-inline">
+                                                    <input type="hidden" name="accion" value="ajuste_rapido">
+                                                    <input type="hidden" name="id" value="<%= p.id %>">
+                                                    <input type="hidden" name="delta" value="-1">
+                                                    <button class="btn btn-xs btn-outline-danger py-0 px-2">-</button>
+                                                </form>
+                                                <span class="badge <%= p.quantity <= p.minStock ? 'bg-danger' : 'bg-dark' %> fs-6 px-2">
+                                                    <%= p.quantity %>
+                                                </span>
+                                                <form method="POST" action="/pages/productos.php" class="m-0 d-inline">
+                                                    <input type="hidden" name="accion" value="ajuste_rapido">
+                                                    <input type="hidden" name="id" value="<%= p.id %>">
+                                                    <input type="hidden" name="delta" value="1">
+                                                    <button class="btn btn-xs btn-outline-success py-0 px-2">+</button>
+                                                </form>
+                                            </div>
+                                        </td>
+                                        <td><%= p.minStock %> uds.</td>
+                                        <td class="text-end">
+                                            <div class="btn-group btn-group-sm">
+                                                <button class="btn btn-outline-primary" onclick="editarProducto(<%= JSON.stringify(p).replace(/"/g, '&quot;') %>)">
+                                                    <i class="fas fa-edit"></i>
+                                                </button>
+                                                <form method="POST" action="/pages/productos.php" class="d-inline m-0" onsubmit="return confirm('¿Eliminar <%= p.name.replace(/'/g, "\\'") %> del catálogo?');">
+                                                    <input type="hidden" name="accion" value="eliminar">
+                                                    <input type="hidden" name="id" value="<%= p.id %>">
+                                                    <button class="btn btn-outline-danger"><i class="fas fa-trash-alt"></i></button>
+                                                </form>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <% }); %>
+                                <% } %>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- MODAL NUEVO PRODUCTO -->
+    <div class="modal fade" id="modalNuevoProducto" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form method="POST" action="/pages/productos.php">
+                    <input type="hidden" name="accion" value="crear">
+                    <div class="modal-header bg-primary text-white">
+                        <h5 class="modal-title fw-bold"><i class="fas fa-box me-2"></i>Nuevo Producto</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small">Nombre del Producto:</label>
+                            <input type="text" name="name" class="form-control" required placeholder="Ej: Barra Energética">
+                        </div>
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small">Código de Barras:</label>
+                                <input type="text" name="barcode" class="form-control" placeholder="7501009...">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small">Existencia Inicial:</label>
+                                <input type="number" name="quantity" class="form-control" required value="10">
+                            </div>
+                        </div>
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small">Precio Compra ($):</label>
+                                <input type="number" step="0.01" name="purchasePrice" class="form-control" required value="1.00">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small">Precio Venta ($):</label>
+                                <input type="number" step="0.01" name="salePrice" class="form-control" required value="2.50">
+                            </div>
+                        </div>
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small">Existencia Mínima:</label>
+                                <input type="number" name="minStock" class="form-control" required value="5">
+                            </div>
+                            <div class="col-md-6 d-flex align-items-center pt-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="isExternal" id="chkExternal">
+                                    <label class="form-check-label small fw-bold" for="chkExternal">Venta Externa (Concesión)</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-primary"><i class="fas fa-save me-1"></i> Guardar Producto</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL EDITAR PRODUCTO -->
+    <div class="modal fade" id="modalEditarProducto" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form method="POST" action="/pages/productos.php">
+                    <input type="hidden" name="accion" value="editar">
+                    <input type="hidden" name="id" id="edit_prod_id">
+                    <div class="modal-header bg-primary text-white">
+                        <h5 class="modal-title fw-bold"><i class="fas fa-edit me-2"></i>Editar Producto</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small">Nombre del Producto:</label>
+                            <input type="text" name="name" id="edit_prod_name" class="form-control" required>
+                        </div>
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small">Código de Barras:</label>
+                                <input type="text" name="barcode" id="edit_prod_barcode" class="form-control">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small">Existencia Actual:</label>
+                                <input type="number" name="quantity" id="edit_prod_quantity" class="form-control" required>
+                            </div>
+                        </div>
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small">Precio Compra ($):</label>
+                                <input type="number" step="0.01" name="purchasePrice" id="edit_prod_purchase" class="form-control" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small">Precio Venta ($):</label>
+                                <input type="number" step="0.01" name="salePrice" id="edit_prod_sale" class="form-control" required>
+                            </div>
+                        </div>
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small">Existencia Mínima:</label>
+                                <input type="number" name="minStock" id="edit_prod_minStock" class="form-control" required>
+                            </div>
+                            <div class="col-md-6 d-flex align-items-center pt-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="isExternal" id="edit_prod_external">
+                                    <label class="form-check-label small fw-bold" for="edit_prod_external">Venta Externa</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-primary"><i class="fas fa-save me-1"></i> Guardar Cambios</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        function editarProducto(p) {
+            document.getElementById('edit_prod_id').value = p.id;
+            document.getElementById('edit_prod_name').value = p.name;
+            document.getElementById('edit_prod_barcode').value = p.barcode || '';
+            document.getElementById('edit_prod_quantity').value = p.quantity;
+            document.getElementById('edit_prod_purchase').value = p.purchasePrice;
+            document.getElementById('edit_prod_sale').value = p.salePrice;
+            document.getElementById('edit_prod_minStock').value = p.minStock;
+            document.getElementById('edit_prod_external').checked = p.isExternal === 1;
+            new bootstrap.Modal(document.getElementById('modalEditarProducto')).show();
+        }
+    </script>
+</body>
+</html>

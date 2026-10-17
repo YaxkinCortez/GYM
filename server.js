@@ -1,0 +1,1648 @@
+import express from 'express';
+import session from 'express-session';
+import cookieParser from 'cookie-parser';
+import path from 'path';
+import fs from 'fs';
+import { execSync } from 'child_process';
+import { fileURLToPath } from 'url';
+import AdmZip from 'adm-zip';
+import {
+  store,
+  nextId,
+  getTodayStr,
+  getNowStr,
+  getDaysDiff,
+  guardarBaseDatos
+} from './data/store.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+export function generarZipProyecto() {
+  const outputZip = path.join(__dirname, 'Gimnasio_La_Fabrica_Completo.zip');
+  try {
+    const zip = new AdmZip();
+    const excludeDirs = new Set(['.git', '.cache', 'temp_actualizacion_extraido', '.aistudio']);
+    const excludeFiles = new Set(['Gimnasio_La_Fabrica_Completo.zip', 'cookies.txt', 'temp_actualizacion.zip']);
+
+    function addDir(dirPath, zipPath = '') {
+      const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(dirPath, entry.name);
+        const entryZipPath = zipPath ? (zipPath + '/' + entry.name) : entry.name;
+        if (entry.isDirectory()) {
+          if (excludeDirs.has(entry.name) || (entry.name.startsWith('.') && entry.name !== '.env.example')) continue;
+          addDir(fullPath, entryZipPath);
+        } else if (entry.isFile()) {
+          if (excludeFiles.has(entry.name) || (entry.name.startsWith('.') && entry.name !== '.env.example')) continue;
+          zip.addLocalFile(fullPath, zipPath);
+        }
+      }
+    }
+
+    addDir(__dirname);
+    zip.writeZip(outputZip);
+
+    const publicDir = path.join(__dirname, 'public');
+    if (fs.existsSync(publicDir)) {
+      try {
+        fs.copyFileSync(outputZip, path.join(publicDir, 'Gimnasio_La_Fabrica_Completo.zip'));
+      } catch (errCopy) {
+        console.warn('[ZIP] Error al sincronizar con public:', errCopy.message);
+      }
+    }
+    return outputZip;
+  } catch (err) {
+    console.warn('[ZIP] Error al generar archivo zip con adm-zip:', err.message);
+    return null;
+  }
+}
+
+const esScriptPrincipal = Boolean(process.argv[1] && (process.argv[1].endsWith('server.js') || process.argv[1] === fileURLToPath(import.meta.url)));
+
+// Generación asíncrona en segundo plano para no demorar el inicio del servidor
+if (esScriptPrincipal) {
+  setTimeout(() => {
+    try {
+      generarZipProyecto();
+    } catch (err) {
+      console.warn('[ZIP] Error al generar zip diferido:', err.message);
+    }
+  }, 1000);
+}
+
+const app = express();
+const PORT = parseInt(process.env.DEFAULT_APP_PORT || (process.env.PORT === '8080' ? 3000 : (process.env.PORT || 3000)), 10);
+
+app.set('view engine', 'ejs');
+app.set('views', path.join(__dirname, 'views'));
+
+app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
+app.use(cookieParser());
+app.use(express.static(path.join(__dirname, 'public')));
+
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET || 'gimnasio_la_fabrica_secret_2026',
+    resave: false,
+    saveUninitialized: false,
+    cookie: { maxAge: 1000 * 60 * 60 * 24 } // 24 hours
+  })
+);
+
+// Helpers attached to res.locals y persistencia automática
+app.use((req, res, next) => {
+  if (req.method === 'POST') {
+    res.on('finish', () => {
+      if (res.statusCode < 400) {
+        guardarBaseDatos();
+      }
+    });
+  }
+  res.locals.usuario = req.session.usuario || null;
+  res.locals.APP_NAME = 'Gimnasio La Fábrica';
+  res.locals.hoy = getTodayStr();
+  res.locals.fechaActual = getNowStr();
+  res.locals.updaterInfo = store.sistema_actualizaciones || null;
+  res.locals.updaterAlerta = (store.sistema_actualizaciones && store.sistema_actualizaciones.alertaNotificacion) || null;
+  next();
+});
+
+// Authentication middleware
+function requireAuth(req, res, next) {
+  if (!req.session.usuario) {
+    return res.redirect('/login.php');
+  }
+  next();
+}
+
+function requireAdmin(req, res, next) {
+  if (!req.session.usuario) {
+    return res.redirect('/login.php');
+  }
+  const role = req.session.usuario.role;
+  if (role !== 'admin' && role !== 'administrador') {
+    return res.redirect('/pages/acceso_restringido.php');
+  }
+  next();
+}
+
+// ========================
+// AUTH ROUTES
+// ========================
+app.get(['/', '/login', '/login.php'], (req, res) => {
+  if (req.session.usuario) {
+    return res.redirect('/pages/dashboard.php');
+  }
+  res.render('login', { error: '' });
+});
+
+app.post(['/login', '/login.php'], (req, res) => {
+  const nameOrEmail = (req.body.name || '').trim();
+  const password = req.body.password || '';
+
+  if (!nameOrEmail || !password) {
+    return res.render('login', { error: 'Por favor completa todos los campos' });
+  }
+
+  const user = store.users.find(
+    u => (u.name.toLowerCase() === nameOrEmail.toLowerCase() || u.email.toLowerCase() === nameOrEmail.toLowerCase()) && u.password === password
+  );
+
+  if (!user) {
+    return res.render('login', { error: 'Nombre o contraseña incorrectos' });
+  }
+
+  user.lastSignedIn = getNowStr();
+  req.session.usuario = {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role
+  };
+
+  res.redirect('/pages/dashboard.php');
+});
+
+app.get(['/logout', '/logout.php'], (req, res) => {
+  req.session.destroy(() => {
+    res.redirect('/login.php');
+  });
+});
+
+// ========================
+// DASHBOARD
+// ========================
+app.get(['/dashboard', '/pages/dashboard.php'], requireAuth, (req, res) => {
+  const today = getTodayStr();
+
+  // Ingresos de hoy
+  const ingProductosInternos = store.saleitems
+    .filter(i => (i.createdAt || '').startsWith(today))
+    .reduce((sum, i) => sum + (Number(i.subtotal) || 0), 0);
+
+  const ingProductosExternos = store.ventas_externas_realizadas
+    .filter(i => (i.createdAt || '').startsWith(today))
+    .reduce((sum, i) => sum + (Number(i.subtotal) || 0), 0);
+
+  const ingresosMembresias = store.membership_sales
+    .filter(m => (m.saleDate || '').startsWith(today))
+    .reduce((sum, m) => sum + (Number(m.cost) || 0), 0);
+
+  const ingresosPasesDiarios = store.temp_visits
+    .filter(v => (v.checkInTime || '').startsWith(today))
+    .reduce((sum, v) => sum + (Number(v.membershipCost) || 0), 0);
+
+  const ingresoHoy = ingProductosInternos + ingProductosExternos + ingresosMembresias + ingresosPasesDiarios;
+
+  // Visitas
+  const visitasSocios = store.visits.filter(v => (v.visitDate || '').startsWith(today)).length;
+  const visitasTemp = store.temp_visits.filter(v => (v.checkInTime || '').startsWith(today)).length;
+  const visitasHoy = visitasSocios + visitasTemp;
+
+  // Clientes y membresías
+  const totalClientes = store.clients.length;
+
+  const clientesActivosSet = new Set();
+  store.clientmemberships.forEach(cm => {
+    if (cm.isActive && cm.endDate >= today) {
+      clientesActivosSet.add(cm.clientId);
+    }
+  });
+  const clientesActivos = clientesActivosSet.size;
+
+  // Bajo stock
+  const listaBajoStock = store.products.filter(p => p.quantity <= p.minStock);
+  const bajoStock = listaBajoStock.length;
+
+  // Membresías por vencer y vencidas
+  const clientLatestMembership = {};
+  store.clientmemberships.forEach(cm => {
+    const existing = clientLatestMembership[cm.clientId];
+    if (!existing || cm.endDate > existing.endDate) {
+      clientLatestMembership[cm.clientId] = cm;
+    }
+  });
+
+  const listaPorVencer = [];
+  const listaVencidas = [];
+
+  Object.values(clientLatestMembership).forEach(cm => {
+    const client = store.clients.find(c => c.id === cm.clientId);
+    const plan = store.memberships.find(m => m.id === cm.membershipId);
+    if (!client || !plan) return;
+
+    const diff = getDaysDiff(cm.endDate, today);
+    if (diff >= 1 && diff <= 5) {
+      listaPorVencer.push({
+        fullName: client.fullName,
+        membership_name: plan.name,
+        endDate: cm.endDate,
+        dias: diff
+      });
+    } else if (diff < 0) {
+      listaVencidas.push({
+        fullName: client.fullName,
+        membership_name: plan.name,
+        endDate: cm.endDate,
+        dias: Math.abs(diff)
+      });
+    }
+  });
+
+  res.render('dashboard', {
+    pagina_activa: 'dashboard.php',
+    ingProductosInternos,
+    ingProductosExternos,
+    ingresosMembresias,
+    ingresosPasesDiarios,
+    ingresoHoy,
+    visitasClientes: visitasSocios,
+    visitasTemporales: visitasTemp,
+    visitasHoy,
+    totalClientes,
+    clientesActivos,
+    bajoStock,
+    listaBajoStock,
+    listaPorVencer,
+    listaVencidas
+  });
+});
+
+// ========================
+// VISITAS
+// ========================
+app.get(['/visitas', '/pages/visitas.php'], requireAuth, (req, res) => {
+  const memDiaria = store.memberships.find(m => m.durationDays === 1 || m.name.toLowerCase().includes('diari')) || { cost: 25.0 };
+  const today = getTodayStr();
+
+  const visitasRecientes = [];
+  store.visits
+    .filter(v => (v.visitDate || '').startsWith(today))
+    .slice(-10)
+    .reverse()
+    .forEach(v => {
+      const client = store.clients.find(c => c.id === v.clientId);
+      visitasRecientes.push({
+        tipo: 'Socio',
+        nombre: client ? client.fullName : 'Socio Desconocido',
+        hora: (v.checkInTime || '').split(' ')[1] || 'Hoy',
+        detalle: 'Entrada registrada en torniquete'
+      });
+    });
+
+  store.temp_visits
+    .filter(v => (v.checkInTime || '').startsWith(today))
+    .slice(-10)
+    .reverse()
+    .forEach(v => {
+      visitasRecientes.push({
+        tipo: 'Temporal',
+        nombre: v.visitorName,
+        hora: (v.checkInTime || '').split(' ')[1] || 'Hoy',
+        detalle: `Pase diario cobrado ($${Number(v.membershipCost).toFixed(2)})`
+      });
+    });
+
+  res.render('visitas', {
+    pagina_activa: 'visitas.php',
+    mensaje: '',
+    tipo_mensaje: '',
+    q: '',
+    encontrados: [],
+    costoDiario: Number(memDiaria.cost),
+    visitasRecientes
+  });
+});
+
+app.post(['/visitas', '/pages/visitas.php'], requireAuth, (req, res) => {
+  const accion = req.body.accion || '';
+  const memDiaria = store.memberships.find(m => m.durationDays === 1 || m.name.toLowerCase().includes('diari')) || { id: 5, cost: 25.0 };
+  const today = getTodayStr();
+  const now = getNowStr();
+
+  let mensaje = '';
+  let tipo_mensaje = '';
+  let q = '';
+  let encontrados = [];
+
+  if (accion === 'buscar') {
+    q = (req.body.q || '').trim();
+    if (q) {
+      const qLower = q.toLowerCase();
+      encontrados = store.clients.filter(
+        c => c.fullName.toLowerCase().includes(qLower) || (c.fingerprint || '').toLowerCase().includes(qLower)
+      );
+    }
+  } else if (accion === 'registrar_visita') {
+    const cid = parseInt(req.body.client_id, 10);
+    const client = store.clients.find(c => c.id === cid);
+    const memberships = store.clientmemberships.filter(cm => cm.clientId === cid).sort((a, b) => b.endDate.localeCompare(a.endDate));
+    const mem = memberships[0];
+
+    if (!mem || !mem.endDate) {
+      mensaje = '🔴 <strong>¡Acceso Denegado!</strong> El cliente no tiene membresía asignada.';
+      tipo_mensaje = 'danger';
+    } else {
+      const dias = getDaysDiff(mem.endDate, today);
+      if (dias < 0) {
+        mensaje = `🔴 <strong>¡Acceso Denegado!</strong> Membresía CADUCADA (hace ${Math.abs(dias)} días).`;
+        tipo_mensaje = 'danger';
+      } else {
+        store.visits.push({
+          id: nextId('visits'),
+          clientId: cid,
+          visitDate: today,
+          checkInTime: now,
+          checkOutTime: null,
+          createdAt: now
+        });
+        if (dias <= 5) {
+          mensaje = `⚠️ <strong>Entrada Permitida.</strong> Membresía por vencer en <strong>${dias} días</strong>.`;
+          tipo_mensaje = 'warning';
+        } else {
+          mensaje = `🟢 <strong>Entrada Permitida.</strong> Membresía activa (<strong>${dias} días restantes</strong>).`;
+          tipo_mensaje = 'success';
+        }
+      }
+    }
+  } else if (accion === 'visita_temporal') {
+    const cost = Number(memDiaria.cost) || 25.0;
+    const visitorName = (req.body.visitorName || '').trim() || 'Visitante Temporal';
+
+    store.temp_visits.push({
+      id: nextId('temp_visits'),
+      visitorName,
+      checkInTime: now,
+      membershipCost: cost
+    });
+
+    store.membership_sales.push({
+      id: nextId('membership_sales'),
+      clientId: null,
+      membershipId: memDiaria.id || 5,
+      cost,
+      saleDate: now
+    });
+
+    mensaje = `✅ Pase diario cobrado exitosamente ($${cost.toFixed(2)}) para <strong>${visitorName}</strong>.`;
+    tipo_mensaje = 'success';
+  }
+
+  // Recalcular visitas de hoy
+  const visitasRecientes = [];
+  store.visits
+    .filter(v => (v.visitDate || '').startsWith(today))
+    .slice(-10)
+    .reverse()
+    .forEach(v => {
+      const client = store.clients.find(c => c.id === v.clientId);
+      visitasRecientes.push({
+        tipo: 'Socio',
+        nombre: client ? client.fullName : 'Socio Desconocido',
+        hora: (v.checkInTime || '').split(' ')[1] || 'Hoy',
+        detalle: 'Entrada registrada en torniquete'
+      });
+    });
+
+  store.temp_visits
+    .filter(v => (v.checkInTime || '').startsWith(today))
+    .slice(-10)
+    .reverse()
+    .forEach(v => {
+      visitasRecientes.push({
+        tipo: 'Temporal',
+        nombre: v.visitorName,
+        hora: (v.checkInTime || '').split(' ')[1] || 'Hoy',
+        detalle: `Pase diario cobrado ($${Number(v.membershipCost).toFixed(2)})`
+      });
+    });
+
+  res.render('visitas', {
+    pagina_activa: 'visitas.php',
+    mensaje,
+    tipo_mensaje,
+    q,
+    encontrados,
+    costoDiario: Number(memDiaria.cost),
+    visitasRecientes
+  });
+});
+
+// ========================
+// CLIENTES
+// ========================
+app.get(['/clientes', '/pages/clientes.php'], requireAuth, (req, res) => {
+  const q = (req.query.q || '').trim();
+  const today = getTodayStr();
+
+  let clientes = store.clients.map(c => {
+    const memberships = store.clientmemberships.filter(cm => cm.clientId === c.id).sort((a, b) => b.endDate.localeCompare(a.endDate));
+    const mActual = memberships[0];
+    let membresiaActual = null;
+    let membresiaEstadoClase = 'bg-secondary';
+    let diasRestantes = 0;
+
+    if (mActual) {
+      const plan = store.memberships.find(m => m.id === mActual.membershipId);
+      diasRestantes = getDaysDiff(mActual.endDate, today);
+      membresiaActual = {
+        ...mActual,
+        membership_name: plan ? plan.name : 'Plan'
+      };
+      if (diasRestantes < 0) {
+        membresiaEstadoClase = 'bg-danger';
+      } else if (diasRestantes <= 5) {
+        membresiaEstadoClase = 'bg-warning text-dark';
+      } else {
+        membresiaEstadoClase = 'bg-success';
+      }
+    }
+
+    const deudas = store.client_debts.filter(d => d.clientId === c.id && d.status !== 'liquidada');
+    const deudaTotal = deudas.reduce((acc, d) => acc + (Number(d.remainingAmount) || 0), 0);
+
+    return {
+      ...c,
+      membresiaActual,
+      membresiaEstadoClase,
+      diasRestantes,
+      deudaTotal
+    };
+  });
+
+  if (q) {
+    const qLower = q.toLowerCase();
+    clientes = clientes.filter(
+      c =>
+        c.fullName.toLowerCase().includes(qLower) ||
+        (c.phone || '').toLowerCase().includes(qLower) ||
+        (c.fingerprint || '').toLowerCase().includes(qLower)
+    );
+  }
+
+  res.render('clientes', {
+    pagina_activa: 'clientes.php',
+    mensaje: req.query.msg || '',
+    tipo_mensaje: req.query.msg_type || 'success',
+    q,
+    clientes,
+    planes: store.memberships.filter(m => m.isActive)
+  });
+});
+
+app.post(['/clientes', '/pages/clientes.php'], requireAuth, (req, res) => {
+  const accion = req.body.accion || '';
+  const now = getNowStr();
+  const today = getTodayStr();
+
+  // AJAX endpoints
+  if (accion === 'verificar_admin') {
+    const u = (req.body.username || '').trim();
+    const p = req.body.password || '';
+    const check = store.users.find(
+      user => (user.name === u || user.email === u) && (user.role === 'admin' || user.role === 'administrador') && user.password === p
+    );
+    if (check) {
+      return res.json({ status: 'ok' });
+    }
+    return res.json({ status: 'error', message: 'Contraseña de administrador incorrecta' });
+  }
+
+  if (accion === 'obtener_info_cliente') {
+    const cId = parseInt(req.body.cliente_id, 10);
+    const cliente = store.clients.find(c => c.id === cId);
+    if (!cliente) {
+      return res.json({ status: 'error', message: 'Cliente no encontrado' });
+    }
+
+    const cms = store.clientmemberships
+      .filter(cm => cm.clientId === cId)
+      .sort((a, b) => b.endDate.localeCompare(a.endDate))
+      .map(cm => {
+        const m = store.memberships.find(plan => plan.id === cm.membershipId);
+        return {
+          ...cm,
+          membership_name: m ? m.name : 'Plan',
+          cost: m ? m.cost : 0,
+          durationDays: m ? m.durationDays : 30,
+          dias_restantes: getDaysDiff(cm.endDate, today)
+        };
+      });
+
+    const cmActual = cms[0] || null;
+    const deudas = store.client_debts.filter(d => d.clientId === cId);
+    const abonos = store.debt_payments.filter(p => p.clientId === cId);
+    const totalDeudaPendiente = deudas.filter(d => d.status !== 'liquidada').reduce((s, d) => s + (Number(d.remainingAmount) || 0), 0);
+
+    return res.json({
+      status: 'ok',
+      cliente,
+      membresiaActual: cmActual,
+      historialMembresias: cms,
+      deudas,
+      abonos,
+      totalDeudaPendiente
+    });
+  }
+
+  // Standard Form submissions
+  if (accion === 'crear') {
+    const newClient = {
+      id: nextId('clients'),
+      fullName: (req.body.fullName || '').trim(),
+      gender: req.body.gender || 'otro',
+      phone: (req.body.phone || '').trim(),
+      address: (req.body.address || '').trim(),
+      dateOfBirth: req.body.dateOfBirth || null,
+      fingerprint: (req.body.fingerprint || '').trim(),
+      createdAt: now,
+      updatedAt: now
+    };
+    store.clients.push(newClient);
+    return res.redirect('/pages/clientes.php?msg=' + encodeURIComponent(`Socio "${newClient.fullName}" registrado exitosamente.`));
+  }
+
+  if (accion === 'editar') {
+    const id = parseInt(req.body.id, 10);
+    const client = store.clients.find(c => c.id === id);
+    if (client) {
+      client.fullName = (req.body.fullName || '').trim();
+      client.gender = req.body.gender || 'otro';
+      client.phone = (req.body.phone || '').trim();
+      client.address = (req.body.address || '').trim();
+      client.dateOfBirth = req.body.dateOfBirth || null;
+      client.fingerprint = (req.body.fingerprint || '').trim();
+      client.updatedAt = now;
+    }
+    return res.redirect('/pages/clientes.php?msg=' + encodeURIComponent('Datos del socio actualizados correctamente.'));
+  }
+
+  if (accion === 'eliminar') {
+    const id = parseInt(req.body.id, 10);
+    const idx = store.clients.findIndex(c => c.id === id);
+    if (idx >= 0) {
+      store.clients.splice(idx, 1);
+    }
+    return res.redirect('/pages/clientes.php?msg=' + encodeURIComponent('Socio eliminado del sistema.'));
+  }
+
+  if (accion === 'asignar_membresia') {
+    const clientId = parseInt(req.body.clientId, 10);
+    const membershipId = parseInt(req.body.membershipId, 10);
+    const startDate = req.body.startDate || today;
+
+    const plan = store.memberships.find(m => m.id === membershipId);
+    if (plan) {
+      const startD = new Date(startDate);
+      const endD = new Date(startD);
+      endD.setDate(endD.getDate() + (plan.durationDays || 30));
+      const endDate = endD.toISOString().split('T')[0];
+
+      // Mark older memberships as inactive
+      store.clientmemberships.forEach(cm => {
+        if (cm.clientId === clientId) cm.isActive = 0;
+      });
+
+      store.clientmemberships.push({
+        id: nextId('clientmemberships'),
+        clientId,
+        membershipId,
+        startDate,
+        endDate,
+        isActive: 1,
+        createdAt: now,
+        updatedAt: now
+      });
+
+      store.membership_sales.push({
+        id: nextId('membership_sales'),
+        clientId,
+        membershipId,
+        cost: plan.cost,
+        saleDate: now
+      });
+    }
+
+    return res.redirect('/pages/clientes.php?msg=' + encodeURIComponent('Membresía asignada y cobrada con éxito.'));
+  }
+
+  res.redirect('/pages/clientes.php');
+});
+
+// ========================
+// VENTAS (POS)
+// ========================
+app.get(['/ventas', '/pages/ventas.php'], requireAuth, (req, res) => {
+  res.render('ventas', {
+    pagina_activa: 'ventas.php',
+    mensaje: req.query.msg || '',
+    tipo_mensaje: req.query.msg_type || 'success',
+    productos: store.products,
+    clientes: store.clients
+  });
+});
+
+app.post(['/ventas', '/pages/ventas.php'], requireAuth, (req, res) => {
+  const accion = req.body.accion || '';
+  const now = getNowStr();
+
+  if (accion === 'crear_venta') {
+    let items = [];
+    try {
+      items = JSON.parse(req.body.items || '[]');
+    } catch {
+      items = [];
+    }
+
+    if (items.length === 0) {
+      return res.redirect('/pages/ventas.php?msg=' + encodeURIComponent('El carrito está vacío.') + '&msg_type=danger');
+    }
+
+    const metodo = req.body.paymentMethod || 'efectivo';
+    const clientId = req.body.clientId ? parseInt(req.body.clientId, 10) : null;
+
+    if (metodo === 'credito' && !clientId) {
+      return res.redirect(
+        '/pages/ventas.php?msg=' + encodeURIComponent('Para ventas a crédito debes seleccionar a un socio.') + '&msg_type=danger'
+      );
+    }
+
+    let totalInternal = 0;
+    let totalExternal = 0;
+    const internalItems = [];
+    const externalItems = [];
+
+    items.forEach(it => {
+      if (it.isExternal) {
+        externalItems.push(it);
+        totalExternal += Number(it.subtotal) || 0;
+      } else {
+        internalItems.push(it);
+        totalInternal += Number(it.subtotal) || 0;
+      }
+    });
+
+    const totalGlobal = totalInternal + totalExternal;
+    const maxSaleId = store.global_sales.length ? Math.max(...store.global_sales.map(s => s.id || 0)) : 0;
+    const folio = String(maxSaleId + 1).padStart(4, '0');
+
+    // Descontar inventario
+    for (const it of internalItems) {
+      const prod = store.products.find(p => p.id === it.productId);
+      if (prod) {
+        prod.quantity = Math.max(0, prod.quantity - it.quantity);
+      }
+    }
+    for (const it of externalItems) {
+      const prod = store.products.find(p => p.id === it.productId);
+      if (prod) {
+        prod.quantity = Math.max(0, prod.quantity - it.quantity);
+      }
+    }
+
+    const globalSaleId = nextId('global_sales');
+    store.global_sales.push({
+      id: globalSaleId,
+      folio,
+      userId: req.session.usuario.id,
+      clientId,
+      totalAmount: totalGlobal,
+      totalInternal,
+      totalExternal,
+      paymentMethod: metodo,
+      notes: '',
+      createdAt: now
+    });
+
+    if (internalItems.length > 0) {
+      const saleId = nextId('sales');
+      store.sales.push({
+        id: saleId,
+        globalSaleId,
+        clientId,
+        userId: req.session.usuario.id,
+        totalAmount: totalInternal,
+        discountAmount: 0,
+        finalAmount: totalInternal,
+        paymentMethod: metodo === 'credito' ? 'efectivo' : metodo,
+        notes: metodo === 'credito' ? `A crédito Folio #${folio}` : '',
+        createdAt: now
+      });
+
+      internalItems.forEach(it => {
+        store.saleitems.push({
+          id: nextId('saleitems'),
+          saleId,
+          globalSaleId,
+          productId: it.productId,
+          productName: it.productName,
+          quantity: it.quantity,
+          unitPrice: it.unitPrice,
+          subtotal: it.subtotal,
+          userId: req.session.usuario.id,
+          createdAt: now
+        });
+      });
+    }
+
+    if (externalItems.length > 0) {
+      externalItems.forEach(it => {
+        store.ventas_externas_realizadas.push({
+          id: nextId('ventas_externas_realizadas'),
+          globalSaleId,
+          productId: it.productId,
+          productName: it.productName,
+          quantity: it.quantity,
+          unitPrice: it.unitPrice,
+          subtotal: it.subtotal,
+          userId: req.session.usuario.id,
+          createdAt: now
+        });
+      });
+    }
+
+    // Registro de deuda si fue a crédito
+    if (metodo === 'credito' && clientId) {
+      const nombresProds = items.map(i => `${i.quantity}x ${i.productName}`).join(', ');
+      store.client_debts.push({
+        id: nextId('client_debts'),
+        clientId,
+        globalSaleId,
+        description: `Venta a crédito #${folio}: ${nombresProds}`,
+        totalAmount: totalGlobal,
+        paidAmount: 0,
+        remainingAmount: totalGlobal,
+        status: 'pendiente',
+        userId: req.session.usuario.id,
+        createdAt: now,
+        updatedAt: now
+      });
+    }
+
+    return res.redirect(
+      '/pages/ventas.php?msg=' +
+        encodeURIComponent(`✅ Venta registrada con éxito (Folio #${folio}) por un total de $${totalGlobal.toFixed(2)}.`)
+    );
+  }
+
+  res.redirect('/pages/ventas.php');
+});
+
+// ========================
+// ABONOS Y DEUDAS
+// ========================
+app.get(['/abonos', '/pages/abonos.php'], requireAuth, (req, res) => {
+  const deudas = store.client_debts.map(d => {
+    const client = store.clients.find(c => c.id === d.clientId);
+    return {
+      ...d,
+      cliente: client ? client.fullName : 'Socio Desconocido'
+    };
+  });
+
+  const totalPendiente = deudas
+    .filter(d => d.status !== 'liquidada')
+    .reduce((acc, d) => acc + (Number(d.remainingAmount) || 0), 0);
+
+  const abonosRecientes = store.debt_payments.slice(-20).reverse().map(a => {
+    const client = store.clients.find(c => c.id === a.clientId);
+    const cajero = store.users.find(u => u.id === a.userId);
+    return {
+      ...a,
+      cliente: client ? client.fullName : 'Socio',
+      cajero: cajero ? cajero.name : 'Admin'
+    };
+  });
+
+  res.render('abonos', {
+    pagina_activa: 'abonos.php',
+    mensaje: req.query.msg || '',
+    tipo_mensaje: req.query.msg_type || 'success',
+    deudas,
+    totalPendiente,
+    abonosRecientes
+  });
+});
+
+app.post(['/abonos', '/pages/abonos.php'], requireAuth, (req, res) => {
+  const accion = req.body.accion || '';
+  const now = getNowStr();
+
+  if (accion === 'registrar_abono') {
+    const debtId = parseInt(req.body.debtId, 10);
+    const amount = parseFloat(req.body.amount) || 0;
+    const metodo = req.body.paymentMethod || 'efectivo';
+    const notes = (req.body.notes || '').trim();
+
+    const deuda = store.client_debts.find(d => d.id === debtId);
+    if (!deuda) {
+      return res.redirect('/pages/abonos.php?msg=' + encodeURIComponent('Deuda no encontrada.') + '&msg_type=danger');
+    }
+
+    const remaining = Number(deuda.remainingAmount) || 0;
+    const montoAbonar = Math.min(amount, remaining);
+
+    deuda.paidAmount = (Number(deuda.paidAmount) || 0) + montoAbonar;
+    deuda.remainingAmount = Math.max(0, remaining - montoAbonar);
+    deuda.status = deuda.remainingAmount <= 0.001 ? 'liquidada' : 'parcial';
+    deuda.updatedAt = now;
+
+    store.debt_payments.push({
+      id: nextId('debt_payments'),
+      debtId,
+      clientId: deuda.clientId,
+      amount: montoAbonar,
+      paymentMethod: metodo,
+      notes,
+      userId: req.session.usuario.id,
+      createdAt: now
+    });
+
+    return res.redirect(
+      '/pages/abonos.php?msg=' + encodeURIComponent(`Abono de $${montoAbonar.toFixed(2)} registrado correctamente.`)
+    );
+  }
+
+  res.redirect('/pages/abonos.php');
+});
+
+// ========================
+// MEMBRESIAS
+// ========================
+app.get(['/membresias', '/pages/membresias.php'], requireAuth, (req, res) => {
+  const today = getTodayStr();
+
+  const sociosMembresias = store.clientmemberships.map(cm => {
+    const client = store.clients.find(c => c.id === cm.clientId);
+    const plan = store.memberships.find(m => m.id === cm.membershipId);
+    return {
+      ...cm,
+      fullName: client ? client.fullName : 'Desconocido',
+      plan: plan ? plan.name : 'Plan',
+      diasRestantes: getDaysDiff(cm.endDate, today)
+    };
+  });
+
+  res.render('membresias', {
+    pagina_activa: 'membresias.php',
+    mensaje: req.query.msg || '',
+    tipo_mensaje: req.query.msg_type || 'success',
+    planes: store.memberships,
+    sociosMembresias
+  });
+});
+
+app.post(['/membresias', '/pages/membresias.php'], requireAuth, (req, res) => {
+  const accion = req.body.accion || '';
+
+  if (accion === 'crear') {
+    const newPlan = {
+      id: nextId('memberships'),
+      name: (req.body.name || '').trim(),
+      cost: parseFloat(req.body.cost) || 0,
+      durationDays: parseInt(req.body.durationDays, 10) || 30,
+      isActive: req.body.isActive ? 1 : 0
+    };
+    store.memberships.push(newPlan);
+    return res.redirect('/pages/membresias.php?msg=' + encodeURIComponent(`Plan "${newPlan.name}" creado con éxito.`));
+  }
+
+  if (accion === 'editar') {
+    const id = parseInt(req.body.id, 10);
+    const plan = store.memberships.find(m => m.id === id);
+    if (plan) {
+      plan.name = (req.body.name || '').trim();
+      plan.cost = parseFloat(req.body.cost) || 0;
+      plan.durationDays = parseInt(req.body.durationDays, 10) || 30;
+      plan.isActive = req.body.isActive ? 1 : 0;
+    }
+    return res.redirect('/pages/membresias.php?msg=' + encodeURIComponent('Plan modificado con éxito.'));
+  }
+
+  if (accion === 'toggle_activa') {
+    const id = parseInt(req.body.id, 10);
+    const plan = store.memberships.find(m => m.id === id);
+    if (plan) {
+      plan.isActive = plan.isActive ? 0 : 1;
+    }
+    return res.redirect('/pages/membresias.php?msg=' + encodeURIComponent('Estado del plan actualizado.'));
+  }
+
+  res.redirect('/pages/membresias.php');
+});
+
+// ========================
+// PRODUCTOS
+// ========================
+app.get(['/productos', '/pages/productos.php'], requireAuth, (req, res) => {
+  res.render('productos', {
+    pagina_activa: 'productos.php',
+    mensaje: req.query.msg || '',
+    tipo_mensaje: req.query.msg_type || 'success',
+    productos: store.products
+  });
+});
+
+app.post(['/productos', '/pages/productos.php'], requireAuth, (req, res) => {
+  const accion = req.body.accion || '';
+  const now = getNowStr();
+
+  if (accion === 'escanear_codigo') {
+    const barcode = (req.body.barcode || '').trim();
+    const prod = store.products.find(p => p.barcode === barcode);
+    if (prod) {
+      prod.quantity += 1;
+      return res.redirect(
+        '/pages/productos.php?msg=' + encodeURIComponent(`✅ +1 unidad agregada a "${prod.name}" (Stock actual: ${prod.quantity})`)
+      );
+    } else {
+      return res.redirect(
+        '/pages/productos.php?msg=' + encodeURIComponent('⚠️ Código de barras no encontrado.') + '&msg_type=warning'
+      );
+    }
+  }
+
+  if (accion === 'ajuste_rapido') {
+    const id = parseInt(req.body.id, 10);
+    const delta = parseInt(req.body.delta, 10) || 0;
+    const prod = store.products.find(p => p.id === id);
+    if (prod) {
+      prod.quantity = Math.max(0, prod.quantity + delta);
+    }
+    return res.redirect('/pages/productos.php?msg=' + encodeURIComponent('Existencia actualizada.'));
+  }
+
+  if (accion === 'crear') {
+    const newProd = {
+      id: nextId('products'),
+      name: (req.body.name || '').trim(),
+      barcode: (req.body.barcode || '').trim(),
+      description: '',
+      purchasePrice: parseFloat(req.body.purchasePrice) || 0,
+      salePrice: parseFloat(req.body.salePrice) || 0,
+      quantity: parseInt(req.body.quantity, 10) || 0,
+      minStock: parseInt(req.body.minStock, 10) || 5,
+      isExternal: req.body.isExternal ? 1 : 0,
+      createdAt: now,
+      updatedAt: now
+    };
+    store.products.push(newProd);
+    return res.redirect('/pages/productos.php?msg=' + encodeURIComponent(`Producto "${newProd.name}" registrado correctamente.`));
+  }
+
+  if (accion === 'editar') {
+    const id = parseInt(req.body.id, 10);
+    const prod = store.products.find(p => p.id === id);
+    if (prod) {
+      prod.name = (req.body.name || '').trim();
+      prod.barcode = (req.body.barcode || '').trim();
+      prod.purchasePrice = parseFloat(req.body.purchasePrice) || 0;
+      prod.salePrice = parseFloat(req.body.salePrice) || 0;
+      prod.quantity = parseInt(req.body.quantity, 10) || 0;
+      prod.minStock = parseInt(req.body.minStock, 10) || 5;
+      prod.isExternal = req.body.isExternal ? 1 : 0;
+      prod.updatedAt = now;
+    }
+    return res.redirect('/pages/productos.php?msg=' + encodeURIComponent('Producto actualizado correctamente.'));
+  }
+
+  if (accion === 'eliminar') {
+    const id = parseInt(req.body.id, 10);
+    const idx = store.products.findIndex(p => p.id === id);
+    if (idx >= 0) {
+      store.products.splice(idx, 1);
+    }
+    return res.redirect('/pages/productos.php?msg=' + encodeURIComponent('Producto eliminado del catálogo.'));
+  }
+
+  res.redirect('/pages/productos.php');
+});
+
+// ========================
+// GASTOS
+// ========================
+app.get(['/gastos', '/pages/gastos.php'], requireAuth, (req, res) => {
+  const gastos = store.expenses.map(e => {
+    const u = store.users.find(user => user.id === e.userId);
+    return {
+      ...e,
+      usuario_nombre: u ? u.name : 'Admin'
+    };
+  }).reverse();
+
+  res.render('gastos', {
+    pagina_activa: 'gastos.php',
+    mensaje: req.query.msg || '',
+    gastos
+  });
+});
+
+app.post(['/gastos', '/pages/gastos.php'], requireAuth, (req, res) => {
+  const accion = req.body.accion || '';
+  const now = getNowStr();
+
+  if (accion === 'crear') {
+    store.expenses.push({
+      id: nextId('expenses'),
+      description: (req.body.description || '').trim(),
+      cost: parseFloat(req.body.cost) || 0,
+      expenseDate: req.body.expenseDate || getTodayStr(),
+      userId: req.session.usuario.id,
+      createdAt: now,
+      updatedAt: now
+    });
+    return res.redirect('/pages/gastos.php?msg=' + encodeURIComponent('Gasto registrado con éxito.'));
+  }
+
+  if (accion === 'eliminar') {
+    const id = parseInt(req.body.id, 10);
+    const idx = store.expenses.findIndex(e => e.id === id);
+    if (idx >= 0) {
+      store.expenses.splice(idx, 1);
+    }
+    return res.redirect('/pages/gastos.php?msg=' + encodeURIComponent('Gasto eliminado.'));
+  }
+
+  res.redirect('/pages/gastos.php');
+});
+
+// ========================
+// BALANCE
+// ========================
+app.get(['/balance', '/pages/balance.php'], requireAdmin, (req, res) => {
+  const today = getTodayStr();
+  const inicio = req.query.fecha_inicio || today.slice(0, 8) + '01';
+  const fin = req.query.fecha_fin || today;
+
+  const ing_prod = store.sales
+    .filter(s => {
+      const d = (s.createdAt || '').split(' ')[0];
+      return d >= inicio && d <= fin;
+    })
+    .reduce((acc, s) => acc + (Number(s.finalAmount) || 0), 0);
+
+  const ing_mem = store.membership_sales
+    .filter(m => {
+      const d = (m.saleDate || '').split(' ')[0];
+      return m.clientId !== null && d >= inicio && d <= fin;
+    })
+    .reduce((acc, m) => acc + (Number(m.cost) || 0), 0);
+
+  const ing_temp = store.temp_visits
+    .filter(v => {
+      const d = (v.checkInTime || '').split(' ')[0];
+      return d >= inicio && d <= fin;
+    })
+    .reduce((acc, v) => acc + (Number(v.membershipCost) || 0), 0);
+
+  const total_ingresos_cobrados = ing_prod + ing_mem + ing_temp;
+
+  const gastos = store.expenses
+    .filter(e => e.expenseDate >= inicio && e.expenseDate <= fin)
+    .reduce((acc, e) => acc + (Number(e.cost) || 0), 0);
+
+  const deudasPeriodo = store.client_debts.filter(d => {
+    const cDate = (d.createdAt || '').split(' ')[0];
+    return cDate >= inicio && cDate <= fin;
+  });
+
+  const credito_otorgado = deudasPeriodo.reduce((acc, d) => acc + (Number(d.totalAmount) || 0), 0);
+  const deudas_pendientes = deudasPeriodo.reduce((acc, d) => acc + (Number(d.remainingAmount) || 0), 0);
+  const credito_abonado = deudasPeriodo.reduce((acc, d) => acc + (Number(d.paidAmount) || 0), 0);
+
+  const balance_neto = total_ingresos_cobrados - gastos;
+
+  res.render('balance', {
+    pagina_activa: 'balance.php',
+    inicio,
+    fin,
+    ing_prod,
+    ing_mem,
+    ing_temp,
+    total_ingresos_cobrados,
+    gastos,
+    credito_otorgado,
+    credito_abonado,
+    deudas_pendientes,
+    balance_neto
+  });
+});
+
+// ========================
+// USUARIOS
+// ========================
+app.get(['/usuarios', '/pages/usuarios.php'], requireAdmin, (req, res) => {
+  res.render('usuarios', {
+    pagina_activa: 'usuarios.php',
+    mensaje: req.query.msg || '',
+    usuarios: store.users
+  });
+});
+
+app.post(['/usuarios', '/pages/usuarios.php'], requireAdmin, (req, res) => {
+  const accion = req.body.accion || '';
+  const now = getNowStr();
+
+  if (accion === 'crear') {
+    store.users.push({
+      id: nextId('users'),
+      openId: null,
+      name: (req.body.name || '').trim(),
+      email: (req.body.email || '').trim(),
+      password: req.body.password || '123456',
+      loginMethod: 'local',
+      role: req.body.role || 'user',
+      createdAt: now,
+      updatedAt: now,
+      lastSignedIn: null
+    });
+    return res.redirect('/pages/usuarios.php?msg=' + encodeURIComponent('Usuario creado exitosamente.'));
+  }
+
+  if (accion === 'eliminar') {
+    const id = parseInt(req.body.id, 10);
+    if (id !== req.session.usuario.id) {
+      const idx = store.users.findIndex(u => u.id === id);
+      if (idx >= 0) store.users.splice(idx, 1);
+    }
+    return res.redirect('/pages/usuarios.php?msg=' + encodeURIComponent('Usuario eliminado.'));
+  }
+
+  res.redirect('/pages/usuarios.php');
+});
+
+// ========================
+// HISTORIAL VENTAS
+// ========================
+app.get(['/historial_ventas', '/pages/historial_ventas.php'], requireAuth, (req, res) => {
+  const ventas = store.global_sales.map(gs => {
+    const vendedor = store.users.find(u => u.id === gs.userId);
+    const client = store.clients.find(c => c.id === gs.clientId);
+    return {
+      ...gs,
+      vendedor: vendedor ? vendedor.name : 'Admin',
+      cliente: client ? client.fullName : 'Público General'
+    };
+  }).reverse();
+
+  res.render('historial_ventas', {
+    pagina_activa: 'historial_ventas.php',
+    ventas
+  });
+});
+
+// ========================
+// HISTORIAL MEMBRESIAS
+// ========================
+app.get(['/historial_membresias', '/pages/historial_membresias.php'], requireAuth, (req, res) => {
+  const historial = store.clientmemberships.map(cm => {
+    const client = store.clients.find(c => c.id === cm.clientId);
+    const plan = store.memberships.find(m => m.id === cm.membershipId);
+    return {
+      ...cm,
+      fullName: client ? client.fullName : 'Socio',
+      plan: plan ? plan.name : 'Plan'
+    };
+  }).reverse();
+
+  res.render('historial_membresias', {
+    pagina_activa: 'historial_membresias.php',
+    historial
+  });
+});
+
+// ========================
+// REPORTES
+// ========================
+app.get(['/reportes', '/pages/reportes.php'], requireAdmin, (req, res) => {
+  const today = getTodayStr();
+  const inicio = req.query.fecha_inicio || today.slice(0, 8) + '01';
+  const fin = req.query.fecha_fin || today;
+  const tipo = req.query.tipo || 'global_sales';
+
+  let columnas = [];
+  let registros = [];
+
+  if (tipo === 'global_sales') {
+    columnas = ['Folio', 'Fecha y Hora', 'Cajero', 'Cliente', 'Subtotal Interno', 'Subtotal Externo', 'Total Cobrado', 'Método Pago'];
+    registros = store.global_sales
+      .filter(s => {
+        const d = (s.createdAt || '').split(' ')[0];
+        return d >= inicio && d <= fin;
+      })
+      .map(s => {
+        const cajero = store.users.find(u => u.id === s.userId);
+        const c = store.clients.find(cl => cl.id === s.clientId);
+        return [
+          `#${s.folio}`,
+          s.createdAt,
+          cajero ? cajero.name : 'Admin',
+          c ? c.fullName : 'Público General',
+          `$${Number(s.totalInternal).toFixed(2)}`,
+          `$${Number(s.totalExternal).toFixed(2)}`,
+          `$${Number(s.totalAmount).toFixed(2)}`,
+          s.paymentMethod
+        ];
+      });
+  } else if (tipo === 'gastos') {
+    columnas = ['ID', 'Fecha', 'Concepto', 'Monto', 'Registró'];
+    registros = store.expenses
+      .filter(e => e.expenseDate >= inicio && e.expenseDate <= fin)
+      .map(e => {
+        const u = store.users.find(user => user.id === e.userId);
+        return [`#${e.id}`, e.expenseDate, e.description, `-$${Number(e.cost).toFixed(2)}`, u ? u.name : 'Admin'];
+      });
+  } else if (tipo === 'membresias') {
+    columnas = ['ID', 'Fecha Venta', 'Socio', 'Plan', 'Costo'];
+    registros = store.membership_sales
+      .filter(m => {
+        const d = (m.saleDate || '').split(' ')[0];
+        return d >= inicio && d <= fin;
+      })
+      .map(m => {
+        const c = store.clients.find(cl => cl.id === m.clientId);
+        const p = store.memberships.find(pl => pl.id === m.membershipId);
+        return [`#${m.id}`, m.saleDate, c ? c.fullName : 'Público General', p ? p.name : 'Plan', `$${Number(m.cost).toFixed(2)}`];
+      });
+  } else {
+    columnas = ['ID', 'Fecha', 'Detalle', 'Total'];
+    registros = [];
+  }
+
+  // Exportar CSV
+  if (req.query.export === 'csv') {
+    let csv = columnas.map(c => `"${c}"`).join(',') + '\n';
+    registros.forEach(r => {
+      csv += r.map(cel => `"${cel}"`).join(',') + '\n';
+    });
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="Reporte_${tipo}_${inicio}_${fin}.csv"`);
+    return res.send('\uFEFF' + csv);
+  }
+
+  res.render('reportes', {
+    pagina_activa: 'reportes.php',
+    tipo,
+    inicio,
+    fin,
+    columnas,
+    registros
+  });
+});
+
+// ========================
+// RESPALDOS
+// ========================
+app.get(['/respaldos', '/pages/respaldos.php'], requireAdmin, (req, res) => {
+  res.render('respaldos', {
+    pagina_activa: 'respaldos.php',
+    mensaje: req.query.msg || ''
+  });
+});
+
+app.post(['/respaldos', '/pages/respaldos.php'], requireAdmin, (req, res) => {
+  const accion = req.body.accion || '';
+  if (accion === 'descargar_json') {
+    const backupData = JSON.stringify(store, null, 2);
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="backup_gimnasio_${getTodayStr()}.json"`);
+    return res.send(backupData);
+  }
+
+  if (accion === 'descargar_zip') {
+    const zipPath = generarZipProyecto() || path.join(__dirname, 'Gimnasio_La_Fabrica_Completo.zip');
+    return res.download(zipPath, 'Gimnasio_La_Fabrica_Completo.zip');
+  }
+
+  res.redirect('/pages/respaldos.php');
+});
+
+app.get(['/descargar-proyecto-zip', '/descargar-zip', '/descargar.php', '/descargar'], (req, res) => {
+  const zipPath = generarZipProyecto() || path.join(__dirname, 'Gimnasio_La_Fabrica_Completo.zip');
+  res.download(zipPath, 'Gimnasio_La_Fabrica_Completo.zip');
+});
+
+// ========================
+// TABLAS
+// ========================
+app.get(['/tablas', '/pages/tablas.php'], requireAdmin, (req, res) => {
+  const listaTablas = Object.keys(store);
+  const tablaSeleccionada = req.query.tabla && store[req.query.tabla] ? req.query.tabla : listaTablas[0];
+  const filas = store[tablaSeleccionada] || [];
+
+  res.render('tablas', {
+    pagina_activa: 'tablas.php',
+    listaTablas,
+    tablaSeleccionada,
+    filas
+  });
+});
+
+// ========================
+// ACTUALIZACIONES (GITHUB)
+// ========================
+async function consultarGitHub(repo) {
+  try {
+    const headers = {
+      'User-Agent': 'GimnasioLaFabrica-Updater',
+      'Accept': 'application/vnd.github.v3+json'
+    };
+
+    // 1. Intentar obtener último release formal
+    const resRelease = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, { headers });
+    if (resRelease.ok) {
+      const data = await resRelease.json();
+      return {
+        tipo: 'release',
+        version: data.tag_name || data.name,
+        descripcion: data.body || 'Nueva versión publicada en GitHub.',
+        fecha: data.published_at || getNowStr(),
+        url: data.html_url
+      };
+    }
+
+    // 2. Si no hay release formal, consultar últimos commits
+    const resCommits = await fetch(`https://api.github.com/repos/${repo}/commits?per_page=1`, { headers });
+    if (resCommits.ok) {
+      const commits = await resCommits.json();
+      if (Array.isArray(commits) && commits.length > 0) {
+        const latest = commits[0];
+        const shaShort = (latest.sha || '').substring(0, 7);
+        const commitMsg = latest.commit && latest.commit.message ? latest.commit.message.split('\n')[0] : 'Actualización de repositorio';
+        return {
+          tipo: 'commit',
+          version: `build-${shaShort}`,
+          descripcion: `Último cambio en GitHub: "${commitMsg}"`,
+          fecha: latest.commit?.committer?.date || getNowStr(),
+          url: latest.html_url
+        };
+      }
+    }
+
+    return null;
+  } catch (error) {
+    console.warn('[Actualizador] Error al conectar con GitHub:', error.message);
+    return null;
+  }
+}
+
+app.get(['/actualizaciones', '/pages/actualizaciones.php'], requireAdmin, (req, res) => {
+  const updater = store.sistema_actualizaciones;
+  const versionFile = path.join(__dirname, 'data', 'version.json');
+  if (fs.existsSync(versionFile)) {
+    try {
+      const vData = JSON.parse(fs.readFileSync(versionFile, 'utf-8'));
+      if (vData && vData.version) {
+        updater.versionActual = vData.version;
+      }
+    } catch (_) {}
+  }
+  const flagPath = path.join(__dirname, 'data', 'simular_actualizacion.flag');
+  const banderaBatActiva = fs.existsSync(flagPath);
+
+  const historial = store.historial_actualizaciones.slice().reverse();
+  const totalClientes = store.clients.length;
+  const totalVentas = store.global_sales.length;
+  const totalProductos = store.products.length;
+
+  res.render('actualizaciones', {
+    pagina_activa: 'actualizaciones.php',
+    mensaje: req.query.msg || '',
+    tipo_mensaje: req.query.msg_type || 'success',
+    updater,
+    banderaBatActiva,
+    historial,
+    totalClientes,
+    totalVentas,
+    totalProductos
+  });
+});
+
+app.post(['/actualizaciones', '/pages/actualizaciones.php'], requireAdmin, async (req, res) => {
+  const accion = req.body.accion || '';
+  const now = getNowStr();
+  const updater = store.sistema_actualizaciones;
+
+  if (accion === 'cerrar_alerta') {
+    updater.alertaNotificacion = null;
+    return res.redirect(req.headers.referer || '/pages/dashboard.php');
+  }
+
+  if (accion === 'comprobar_ahora') {
+    updater.ultimaComprobacion = now;
+    const resultado = await consultarGitHub(updater.repo);
+
+    if (resultado && resultado.version && resultado.version !== updater.versionActual) {
+      updater.actualizacionDisponible = {
+        version: resultado.version,
+        descripcion: resultado.descripcion,
+        fecha: resultado.fecha,
+        url: resultado.url
+      };
+      updater.alertaNotificacion = {
+        tipo: 'info',
+        titulo: 'Actualización Disponible',
+        mensaje: `Se ha detectado una nueva versión en GitHub (${resultado.version}). Puedes instalarla manteniendo todos tus datos seguros.`
+      };
+      return res.redirect(
+        '/pages/actualizaciones.php?msg=' +
+          encodeURIComponent(`🔔 ¡Nueva versión detectada en GitHub: ${resultado.version}!`) +
+          '&msg_type=warning'
+      );
+    } else {
+      updater.actualizacionDisponible = null;
+      return res.redirect(
+        '/pages/actualizaciones.php?msg=' +
+          encodeURIComponent(`✅ Tu sistema está al día con el repositorio GitHub (${updater.repo}). Versión actual: ${updater.versionActual}.`) +
+          '&msg_type=success'
+      );
+    }
+  }
+
+  if (accion === 'simular_nueva_version') {
+    // Generar siguiente versión incremental para demostración
+    const partes = updater.versionActual.replace('v', '').split('.');
+    const mayor = partes[0] || '1';
+    const menor = parseInt(partes[1] || '2', 10) + 1;
+    const nuevaVer = `v${mayor}.${menor}.0`;
+
+    updater.ultimaComprobacion = now;
+    updater.actualizacionDisponible = {
+      version: nuevaVer,
+      descripcion: 'Actualización de mejoras en velocidad de búsqueda de socios, estabilidad de respaldos y optimización de punto de venta.',
+      fecha: now,
+      url: `https://github.com/${updater.repo}`
+    };
+    updater.alertaNotificacion = {
+      tipo: 'info',
+      titulo: 'Nueva Versión Detectada',
+      mensaje: `Nueva versión ${nuevaVer} lista para descargar e instalar automáticamente desde GitHub.`
+    };
+    return res.redirect(
+      '/pages/actualizaciones.php?msg=' +
+        encodeURIComponent(`🔔 Nueva versión simulada (${nuevaVer}) disponible para descarga e instalación segura.`) +
+        '&msg_type=warning'
+    );
+  }
+
+  if (accion === 'simular_para_bat') {
+    const flagPath = path.join(__dirname, 'data', 'simular_actualizacion.flag');
+    fs.writeFileSync(flagPath, '1', 'utf-8');
+    return res.redirect(
+      '/pages/actualizaciones.php?msg=' +
+        encodeURIComponent('⚙️ Simulación programada. Al ejecutar iniciar_gimnasio.bat (o iniciar_gimnasio.sh), detectará la nueva versión, la descargará e instalará sin tocar tu base de datos y se relanzará automáticamente.') +
+        '&msg_type=info'
+    );
+  }
+
+  if (accion === 'cancelar_simulacion_bat') {
+    const flagPath = path.join(__dirname, 'data', 'simular_actualizacion.flag');
+    if (fs.existsSync(flagPath)) {
+      try { fs.unlinkSync(flagPath); } catch (_) {}
+    }
+    return res.redirect(
+      '/pages/actualizaciones.php?msg=' +
+        encodeURIComponent('✅ Simulación de iniciar_gimnasio.bat cancelada.') +
+        '&msg_type=success'
+    );
+  }
+
+  if (accion === 'instalar_actualizacion') {
+    const actualizacion = updater.actualizacionDisponible;
+    if (!actualizacion) {
+      return res.redirect(
+        '/pages/actualizaciones.php?msg=' + encodeURIComponent('No hay ninguna actualización pendiente de instalar.') + '&msg_type=warning'
+      );
+    }
+
+    // 1. RESPALDO AUTOMÁTICO DE SEGURIDAD PREVIO (Punto de restauración)
+    const snapshot = {
+      users: JSON.parse(JSON.stringify(store.users)),
+      clients: JSON.parse(JSON.stringify(store.clients)),
+      memberships: JSON.parse(JSON.stringify(store.memberships)),
+      clientmemberships: JSON.parse(JSON.stringify(store.clientmemberships)),
+      products: JSON.parse(JSON.stringify(store.products)),
+      sales: JSON.parse(JSON.stringify(store.sales)),
+      global_sales: JSON.parse(JSON.stringify(store.global_sales)),
+      saleitems: JSON.parse(JSON.stringify(store.saleitems)),
+      ventas_externas_realizadas: JSON.parse(JSON.stringify(store.ventas_externas_realizadas)),
+      client_debts: JSON.parse(JSON.stringify(store.client_debts)),
+      debt_payments: JSON.parse(JSON.stringify(store.debt_payments)),
+      membership_sales: JSON.parse(JSON.stringify(store.membership_sales)),
+      visits: JSON.parse(JSON.stringify(store.visits)),
+      temp_visits: JSON.parse(JSON.stringify(store.temp_visits)),
+      expenses: JSON.parse(JSON.stringify(store.expenses))
+    };
+
+    updater.puntosDeRestauracion.unshift({
+      fecha: now,
+      etiqueta: `Respaldo Previo a ${actualizacion.version}`,
+      resumen: `${store.clients.length} socios, ${store.products.length} productos, ${store.global_sales.length} ventas`,
+      snapshot
+    });
+
+    // 2. APLICAR ACTUALIZACIÓN
+    const versionAnterior = updater.versionActual;
+    updater.versionActual = actualizacion.version;
+    updater.actualizacionDisponible = null;
+
+    store.historial_actualizaciones.push({
+      id: nextId('historial_actualizaciones'),
+      version: actualizacion.version,
+      fecha: now,
+      descripcion: actualizacion.descripcion || 'Actualización automática sincronizada desde GitHub.',
+      origen: `GitHub (${updater.repo})`,
+      estado: 'instalada',
+      baseDeDatosPreservada: true
+    });
+
+    // Regenerar el archivo zip del proyecto actualizado
+    generarZipProyecto();
+
+    // 3. GENERAR ALERTA VISIBLE PARA EL USUARIO
+    updater.alertaNotificacion = {
+      tipo: 'exito',
+      titulo: '¡Actualización Exitosa!',
+      mensaje: `El sistema se actualizó correctamente de ${versionAnterior} a ${actualizacion.version}. Tus socios, cobros, adeudos e inventario fueron respaldados y preservados al 100%.`
+    };
+
+    return res.redirect(
+      '/pages/actualizaciones.php?msg=' +
+        encodeURIComponent(`🎉 ¡Actualización a ${actualizacion.version} instalada con éxito! La base de datos local fue preservada intacta.`) +
+        '&msg_type=success'
+    );
+  }
+
+  if (accion === 'restaurar_punto') {
+    const indice = parseInt(req.body.indice, 10);
+    const punto = updater.puntosDeRestauracion[indice];
+    if (punto && punto.snapshot) {
+      const snap = punto.snapshot;
+      Object.keys(snap).forEach(key => {
+        if (store[key]) {
+          store[key] = JSON.parse(JSON.stringify(snap[key]));
+        }
+      });
+      return res.redirect(
+        '/pages/actualizaciones.php?msg=' +
+          encodeURIComponent(`✅ Base de datos restaurada al punto de seguridad del ${punto.fecha}.`) +
+          '&msg_type=success'
+      );
+    }
+  }
+
+  res.redirect('/pages/actualizaciones.php');
+});
+
+// 404 fallback to dashboard
+app.use((req, res) => {
+  if (req.session && req.session.usuario) {
+    res.redirect('/pages/dashboard.php');
+  } else {
+    res.redirect('/login.php');
+  }
+});
+
+function iniciarServidor(puertoInicio, intentosMax = 5) {
+  const puerto = parseInt(puertoInicio, 10) || 3000;
+  const srv = app.listen(puerto, '0.0.0.0', () => {
+    console.log(`[Gimnasio La Fabrica] Servidor iniciado con éxito en http://0.0.0.0:${puerto}`);
+    console.log(`[Gimnasio La Fabrica] Acceso local disponible en: http://localhost:${puerto}`);
+  });
+
+  srv.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.warn(`[Gimnasio La Fabrica] Puerto ${puerto} en uso.`);
+      if (process.env.APPLET_ID || process.env.DEFAULT_APP_PORT) {
+        if (intentosMax > 0) {
+          console.log(`[Gimnasio La Fabrica] Reintentando en puerto ${puerto} en 1 segundo...`);
+          setTimeout(() => {
+            iniciarServidor(puerto, intentosMax - 1);
+          }, 1000);
+          return;
+        }
+      } else if (intentosMax > 0) {
+        const siguientePuerto = puerto + 1;
+        console.log(`[Gimnasio La Fabrica] Probando puerto alternativo ${siguientePuerto}...`);
+        iniciarServidor(siguientePuerto, intentosMax - 1);
+        return;
+      }
+      console.error('[Gimnasio La Fabrica] No se pudo encontrar un puerto libre disponible.');
+      process.exit(1);
+    } else {
+      console.error('[Gimnasio La Fabrica] Error en servidor:', err);
+      process.exit(1);
+    }
+  });
+
+  return srv;
+}
+
+let server = null;
+if (esScriptPrincipal) {
+  server = iniciarServidor(PORT);
+}
+export { server, app, iniciarServidor };
+

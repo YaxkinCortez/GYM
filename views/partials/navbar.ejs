@@ -1,0 +1,43 @@
+<nav class="navbar navbar-expand-lg navbar-dark shadow-sm">
+    <div class="container-fluid">
+        <button class="navbar-toggler d-md-none me-2 border-0" type="button" data-bs-toggle="offcanvas" data-bs-target="#sidebarMobile">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <a class="navbar-brand fw-bold" href="/pages/dashboard.php">
+            <i class="fas fa-dumbbell me-2"></i> Gimnasio La Fábrica
+        </a>
+        <div class="ms-auto d-flex align-items-center gap-3">
+            <% if (typeof updaterInfo !== 'undefined' && updaterInfo && updaterInfo.actualizacionDisponible) { %>
+                <a href="/pages/actualizaciones.php" class="btn btn-sm btn-warning text-dark fw-bold rounded-pill px-3 shadow-sm d-none d-md-inline-flex align-items-center gap-1">
+                    <i class="fas fa-arrow-circle-up"></i> Actualización <%= updaterInfo.actualizacionDisponible.version %>
+                </a>
+            <% } %>
+            <a href="/descargar-proyecto-zip" class="btn btn-sm btn-success text-white fw-bold rounded-pill px-3 shadow-sm d-inline-flex align-items-center gap-1" title="Descargar todo el proyecto comprimido en formato .ZIP">
+                <i class="fas fa-file-zipper"></i> <span class="d-none d-sm-inline">Descargar</span> .ZIP
+            </a>
+            <span class="text-white small d-none d-sm-inline">
+                <i class="fas fa-user-circle me-1"></i> <%= (usuario && usuario.name) ? usuario.name : 'Usuario' %> 
+                <span class="badge bg-light text-dark ms-1"><%= (usuario && (usuario.role === 'admin' || usuario.role === 'administrador')) ? 'Administrador' : 'Cajero' %></span>
+            </span>
+            <a class="btn btn-sm btn-outline-light rounded-pill px-3" href="/logout.php">
+                <i class="fas fa-sign-out-alt"></i> Salir
+            </a>
+        </div>
+    </div>
+</nav>
+
+<% if (typeof updaterAlerta !== 'undefined' && updaterAlerta && updaterAlerta.mensaje) { %>
+<div class="alert alert-<%= updaterAlerta.tipo === 'exito' ? 'success' : (updaterAlerta.tipo === 'info' ? 'info' : 'warning') %> alert-dismissible fade show m-3 mb-0 shadow-sm border-0" role="alert">
+    <div class="d-flex align-items-center gap-2">
+        <i class="fas <%= updaterAlerta.tipo === 'exito' ? 'fa-check-circle fs-4' : 'fa-info-circle fs-4' %>"></i>
+        <div>
+            <strong><%= updaterAlerta.titulo || 'Notificación del Sistema' %>:</strong>
+            <%= updaterAlerta.mensaje %>
+        </div>
+    </div>
+    <form method="POST" action="/pages/actualizaciones.php" class="d-inline m-0">
+        <input type="hidden" name="accion" value="cerrar_alerta">
+        <button type="submit" class="btn-close" aria-label="Cerrar"></button>
+    </form>
+</div>
+<% } %>

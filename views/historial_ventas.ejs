@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Historial de Ventas - Gimnasio La Fabrica</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <%- include('partials/navbar') %>
+    <div class="container-fluid">
+        <div class="row">
+            <%- include('partials/sidebar') %>
+            <main class="col-md-10 ms-sm-auto px-md-4 main-content">
+                <div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div>
+                        <h1><i class="fas fa-receipt me-2"></i>Historial de Ventas Globales</h1>
+                        <p class="text-muted mb-0 small">Consulta de transacciones con folio autoincrementable y desglose de productos</p>
+                    </div>
+                    <a href="/pages/ventas.php" class="btn btn-primary"><i class="fas fa-plus me-1"></i> Nueva Venta</a>
+                </div>
+
+                <div class="card shadow-sm">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Folio</th>
+                                    <th>Fecha y Hora</th>
+                                    <th>Atendió</th>
+                                    <th>Cliente</th>
+                                    <th>Subtotal Interno</th>
+                                    <th>Subtotal Externo</th>
+                                    <th>Total Cobrado</th>
+                                    <th>Método</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <% if (ventas.length === 0) { %>
+                                    <tr><td colspan="8" class="text-center py-4 text-muted">No hay ventas registradas.</td></tr>
+                                <% } else { %>
+                                    <% ventas.forEach(function(v) { %>
+                                    <tr>
+                                        <td><span class="badge bg-dark font-monospace fs-6">#<%= v.folio %></span></td>
+                                        <td><%= v.createdAt %></td>
+                                        <td><%= v.vendedor || 'Administrador' %></td>
+                                        <td class="fw-bold"><%= v.cliente || 'Público General' %></td>
+                                        <td>$<%= Number(v.totalInternal || 0).toFixed(2) %></td>
+                                        <td>$<%= Number(v.totalExternal || 0).toFixed(2) %></td>
+                                        <td class="fw-bold text-success fs-6">$<%= Number(v.totalAmount || 0).toFixed(2) %></td>
+                                        <td>
+                                            <span class="badge <%= v.paymentMethod === 'credito' ? 'bg-danger' : 'bg-secondary' %>">
+                                                <%= v.paymentMethod %>
+                                            </span>
+                                        </td>
+                                    </tr>
+                                    <% }); %>
+                                <% } %>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

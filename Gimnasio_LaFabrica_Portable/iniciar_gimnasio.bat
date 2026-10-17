@@ -1,5 +1,5 @@
 @echo off
-chcp 65001 >nul
+:: codepage standard
 title Gimnasio La Fabrica - Servidor Desktop Portable
 cd /d "%~dp0"
 

@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visitas - Gimnasio La Fabrica</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <%- include('partials/navbar') %>
+    <div class="container-fluid">
+        <div class="row">
+            <%- include('partials/sidebar') %>
+            <main class="col-md-10 ms-sm-auto px-md-4 main-content">
+                <div class="page-header">
+                    <h1><i class="fas fa-door-open me-2"></i>Control de Accesos</h1>
+                </div>
+
+                <% if (mensaje) { %>
+                    <div class="alert alert-<%= tipo_mensaje %> alert-dismissible fade show">
+                        <%- mensaje %>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                <% } %>
+
+                <div class="row g-4">
+                    <!-- Socio Registrado -->
+                    <div class="col-md-7">
+                        <div class="card h-100 shadow-sm">
+                            <div class="card-header bg-primary text-white fw-bold">
+                                <i class="fas fa-search me-2"></i>Acceso de Socio Registrado
+                            </div>
+                            <div class="card-body">
+                                <form method="POST" action="/pages/visitas.php" class="d-flex gap-2 mb-3">
+                                    <input type="hidden" name="accion" value="buscar">
+                                    <input type="text" name="q" value="<%= q || '' %>" class="form-control" placeholder="Nombre o código huella (ej: Juan, FP-8841)..." autofocus>
+                                    <button class="btn btn-primary px-4"><i class="fas fa-search"></i> Buscar</button>
+                                </form>
+
+                                <% if (encontrados && encontrados.length > 0) { %>
+                                    <div class="list-group">
+                                        <% encontrados.forEach(function(c) { %>
+                                        <div class="list-group-item d-flex justify-content-between align-items-center">
+                                            <div>
+                                                <strong><%= c.fullName %></strong>
+                                                <div class="small text-muted">
+                                                    Huella: <%= c.fingerprint || 'Sin huella' %> | Tel: <%= c.phone || 'S/N' %>
+                                                </div>
+                                            </div>
+                                            <form method="POST" action="/pages/visitas.php" class="m-0">
+                                                <input type="hidden" name="accion" value="registrar_visita">
+                                                <input type="hidden" name="client_id" value="<%= c.id %>">
+                                                <button class="btn btn-success btn-sm px-3">
+                                                    <i class="fas fa-check"></i> Registrar Entrada
+                                                </button>
+                                            </form>
+                                        </div>
+                                        <% }); %>
+                                    </div>
+                                <% } else if (q) { %>
+                                    <div class="alert alert-warning py-2 small">
+                                        No se encontraron socios con el término "<%= q %>".
+                                    </div>
+                                <% } else { %>
+                                    <p class="text-muted small">Escribe el nombre o clave de huella del socio para consultar su estado y validar su entrada.</p>
+                                <% } %>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Pase Diario / Visita Temporal -->
+                    <div class="col-md-5">
+                        <div class="card h-100 bg-warning-subtle border-warning shadow-sm">
+                            <div class="card-header bg-warning fw-bold text-dark d-flex justify-content-between align-items-center">
+                                <span><i class="fas fa-ticket-alt me-2"></i>Pase Diario / Visita Temporal</span>
+                                <span class="badge bg-dark font-monospace">$<%= costoDiario.toFixed(2) %></span>
+                            </div>
+                            <div class="card-body text-start d-flex flex-column justify-content-between">
+                                <div>
+                                    <p class="small text-muted mb-3">Registra un visitante temporal sin membresía mensual. El precio está vinculado automáticamente al plan diario vigente.</p>
+                                    <form method="POST" action="/pages/visitas.php">
+                                        <input type="hidden" name="accion" value="visita_temporal">
+                                        <div class="mb-3">
+                                            <label class="form-label small fw-bold">Nombre del Visitante:</label>
+                                            <input type="text" name="visitorName" class="form-control" placeholder="Ej: Visitante Temporal" required>
+                                        </div>
+                                        <button class="btn btn-dark w-100 py-2 fw-bold">
+                                            <i class="fas fa-cash-register me-1"></i> Cobrar Pase Diario ($<%= costoDiario.toFixed(2) %>)
+                                        </button>
+                                    </form>
+                                </div>
+                                <div class="mt-3 text-muted small border-top pt-2">
+                                    <i class="fas fa-info-circle me-1"></i> El ingreso se acredita inmediatamente al corte de caja del día de hoy.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- HISTORIAL RECIENTE DE HOY -->
+                <div class="card mt-4 shadow-sm">
+                    <div class="card-header bg-light fw-bold">
+                        <i class="fas fa-history me-2"></i>Accesos Registrados Hoy
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr><th>Tipo</th><th>Persona</th><th>Hora Entrada</th><th>Detalle</th></tr>
+                                </thead>
+                                <tbody>
+                                    <% if (visitasRecientes.length === 0) { %>
+                                        <tr><td colspan="4" class="text-center py-3 text-muted">Aún no hay visitas registradas hoy.</td></tr>
+                                    <% } else { %>
+                                        <% visitasRecientes.forEach(function(v) { %>
+                                        <tr>
+                                            <td>
+                                                <span class="badge <%= v.tipo === 'Socio' ? 'bg-primary' : 'bg-warning text-dark' %>"><%= v.tipo %></span>
+                                            </td>
+                                            <td class="fw-bold"><%= v.nombre %></td>
+                                            <td><%= v.hora %></td>
+                                            <td class="text-muted small"><%= v.detalle %></td>
+                                        </tr>
+                                        <% }); %>
+                                    <% } %>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

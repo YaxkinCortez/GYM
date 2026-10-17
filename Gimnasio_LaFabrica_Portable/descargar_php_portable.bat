@@ -1,5 +1,5 @@
 @echo off
-chcp 65001 >nul
+:: codepage standard
 title Descargar PHP Portable para Windows
 cd /d "%~dp0"
 

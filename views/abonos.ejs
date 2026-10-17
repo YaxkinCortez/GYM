@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Abonos y Deudas - Gimnasio La Fabrica</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <%- include('partials/navbar') %>
+    <div class="container-fluid">
+        <div class="row">
+            <%- include('partials/sidebar') %>
+            <main class="col-md-10 ms-sm-auto px-md-4 main-content">
+                <div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div>
+                        <h1><i class="fas fa-hand-holding-dollar me-2"></i>Abonos y Liquidación de Deudas</h1>
+                        <p class="text-muted mb-0 small">Control de compras a crédito, saldos atrasados y comprobantes de abono</p>
+                    </div>
+                    <span class="badge bg-danger fs-6">Pendiente Total: $<%= totalPendiente.toFixed(2) %></span>
+                </div>
+
+                <% if (mensaje) { %>
+                    <div class="alert alert-<%= tipo_mensaje %> alert-dismissible fade show">
+                        <%- mensaje %>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                <% } %>
+
+                <!-- TABLA DE DEUDAS -->
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header bg-light fw-bold">
+                        <i class="fas fa-list me-2"></i>Cuentas por Cobrar a Socios
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>#</th>
+                                    <th>Socio</th>
+                                    <th>Concepto / Detalle</th>
+                                    <th>Total Deuda</th>
+                                    <th>Abonado</th>
+                                    <th>Saldo Pendiente</th>
+                                    <th>Estado</th>
+                                    <th class="text-end">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <% if (deudas.length === 0) { %>
+                                    <tr><td colspan="8" class="text-center py-4 text-muted">No existen deudas pendientes registradas en el sistema.</td></tr>
+                                <% } else { %>
+                                    <% deudas.forEach(function(d) { %>
+                                    <tr>
+                                        <td><span class="badge bg-light text-dark border">#<%= d.id %></span></td>
+                                        <td class="fw-bold"><%= d.cliente %></td>
+                                        <td><%= d.description %></td>
+                                        <td>$<%= d.totalAmount.toFixed(2) %></td>
+                                        <td class="text-success">$<%= d.paidAmount.toFixed(2) %></td>
+                                        <td class="text-danger fw-bold fs-6">$<%= d.remainingAmount.toFixed(2) %></td>
+                                        <td>
+                                            <span class="badge <%= d.status === 'liquidada' ? 'bg-success' : (d.status === 'parcial' ? 'bg-warning text-dark' : 'bg-danger') %>">
+                                                <%= d.status.toUpperCase() %>
+                                            </span>
+                                        </td>
+                                        <td class="text-end">
+                                            <% if (d.status !== 'liquidada') { %>
+                                                <button class="btn btn-sm btn-success px-3" onclick="abrirAbono(<%= JSON.stringify(d).replace(/"/g, '&quot;') %>)">
+                                                    <i class="fas fa-dollar-sign"></i> Abonar
+                                                </button>
+                                            <% } else { %>
+                                                <span class="text-muted small"><i class="fas fa-check-double text-success"></i> Liquidado</span>
+                                            <% } %>
+                                        </td>
+                                    </tr>
+                                    <% }); %>
+                                <% } %>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- HISTORIAL DE ABONOS RECIENTES -->
+                <div class="card shadow-sm">
+                    <div class="card-header bg-light fw-bold">
+                        <i class="fas fa-history me-2"></i>Historial de Pagos y Abonos Recibidos
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover align-middle mb-0">
+                            <thead class="table-light">
+                                <tr><th>#</th><th>Fecha</th><th>Socio</th><th>Monto Abonado</th><th>Método</th><th>Atendió</th></tr>
+                            </thead>
+                            <tbody>
+                                <% if (abonosRecientes.length === 0) { %>
+                                    <tr><td colspan="6" class="text-center py-3 text-muted">No hay abonos registrados aún.</td></tr>
+                                <% } else { %>
+                                    <% abonosRecientes.forEach(function(a) { %>
+                                    <tr>
+                                        <td>#<%= a.id %></td>
+                                        <td><%= a.createdAt %></td>
+                                        <td class="fw-bold"><%= a.cliente %></td>
+                                        <td class="text-success fw-bold">+$<%= a.amount.toFixed(2) %></td>
+                                        <td><span class="badge bg-secondary"><%= a.paymentMethod %></span></td>
+                                        <td><%= a.cajero || 'Admin' %></td>
+                                    </tr>
+                                    <% }); %>
+                                <% } %>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- MODAL REGISTRAR ABONO -->
+    <div class="modal fade" id="modalAbono" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form method="POST" action="/pages/abonos.php">
+                    <input type="hidden" name="accion" value="registrar_abono">
+                    <input type="hidden" name="debtId" id="abono_debtId">
+                    <div class="modal-header bg-success text-white">
+                        <h5 class="modal-title fw-bold"><i class="fas fa-hand-holding-dollar me-2"></i>Registrar Abono o Liquidación</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="mb-1">Socio: <strong id="abono_cliente"></strong></p>
+                        <p class="mb-3 text-danger">Saldo Restante: <strong id="abono_saldo"></strong></p>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small">Monto a Abonar ($):</label>
+                            <div class="input-group">
+                                <span class="input-group-text">$</span>
+                                <input type="number" step="0.01" name="amount" id="abono_amount" class="form-control" required min="0.01">
+                                <button type="button" class="btn btn-outline-secondary" onclick="liquidarTotal()">Liquidar Todo</button>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small">Método de Pago:</label>
+                            <select name="paymentMethod" class="form-select" required>
+                                <option value="efectivo">Efectivo</option>
+                                <option value="tarjeta">Tarjeta</option>
+                                <option value="transferencia">Transferencia</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small">Notas / Comentarios:</label>
+                            <input type="text" name="notes" class="form-control" placeholder="Abono parcial en caja...">
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-success"><i class="fas fa-check me-1"></i> Aplicar Abono</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let deudaActual = null;
+        function abrirAbono(d) {
+            deudaActual = d;
+            document.getElementById('abono_debtId').value = d.id;
+            document.getElementById('abono_cliente').innerText = d.cliente;
+            document.getElementById('abono_saldo').innerText = '$' + d.remainingAmount.toFixed(2);
+            document.getElementById('abono_amount').value = d.remainingAmount.toFixed(2);
+            document.getElementById('abono_amount').max = d.remainingAmount;
+            new bootstrap.Modal(document.getElementById('modalAbono')).show();
+        }
+
+        function liquidarTotal() {
+            if (deudaActual) {
+                document.getElementById('abono_amount').value = deudaActual.remainingAmount.toFixed(2);
+            }
+        }
+    </script>
+</body>
+</html>

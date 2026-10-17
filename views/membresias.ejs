@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Membresías - Gimnasio La Fabrica</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <%- include('partials/navbar') %>
+    <div class="container-fluid">
+        <div class="row">
+            <%- include('partials/sidebar') %>
+            <main class="col-md-10 ms-sm-auto px-md-4 main-content">
+                <div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div>
+                        <h1><i class="fas fa-id-card me-2"></i>Catálogo de Membresías</h1>
+                        <p class="text-muted mb-0 small">Configuración de planes, costos, duraciones y estado</p>
+                    </div>
+                    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalNuevoPlan">
+                        <i class="fas fa-plus me-1"></i> Nuevo Plan
+                    </button>
+                </div>
+
+                <% if (mensaje) { %>
+                    <div class="alert alert-<%= tipo_mensaje %> alert-dismissible fade show">
+                        <%- mensaje %>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                <% } %>
+
+                <div class="row g-4 mb-4">
+                    <% planes.forEach(function(p) { %>
+                    <div class="col-md-4">
+                        <div class="card h-100 shadow-sm border-top border-4 <%= p.isActive ? 'border-primary' : 'border-secondary' %>">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                    <h5 class="fw-bold mb-0"><%= p.name %></h5>
+                                    <span class="badge <%= p.isActive ? 'bg-success' : 'bg-secondary' %>">
+                                        <%= p.isActive ? 'Activo' : 'Inactivo' %>
+                                    </span>
+                                </div>
+                                <div class="my-3">
+                                    <span class="display-6 fw-bold text-dark">$<%= p.cost.toFixed(2) %></span>
+                                    <span class="text-muted small"> / <%= p.durationDays %> días</span>
+                                </div>
+                                <div class="d-flex gap-2 border-top pt-3">
+                                    <button class="btn btn-sm btn-outline-primary w-50" onclick="editarPlan(<%= JSON.stringify(p).replace(/"/g, '&quot;') %>)">
+                                        <i class="fas fa-edit"></i> Editar
+                                    </button>
+                                    <form method="POST" action="/pages/membresias.php" class="w-50 m-0">
+                                        <input type="hidden" name="accion" value="toggle_activa">
+                                        <input type="hidden" name="id" value="<%= p.id %>">
+                                        <button type="submit" class="btn btn-sm <%= p.isActive ? 'btn-outline-warning' : 'btn-outline-success' %> w-100">
+                                            <%= p.isActive ? 'Desactivar' : 'Activar' %>
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <% }); %>
+                </div>
+
+                <!-- SOCIOS CON MEMBRESÍA ACTIVA -->
+                <div class="card shadow-sm">
+                    <div class="card-header bg-light fw-bold">
+                        <i class="fas fa-users me-2"></i>Membresías Vigentes de Socios
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-light">
+                                <tr><th>Socio</th><th>Plan Asignado</th><th>Fecha Inicio</th><th>Fecha Vencimiento</th><th>Días Restantes</th><th>Estado</th></tr>
+                            </thead>
+                            <tbody>
+                                <% if (sociosMembresias.length === 0) { %>
+                                    <tr><td colspan="6" class="text-center py-4 text-muted">No hay registros de socios con membresía.</td></tr>
+                                <% } else { %>
+                                    <% sociosMembresias.forEach(function(sm) { %>
+                                    <tr>
+                                        <td class="fw-bold"><%= sm.fullName %></td>
+                                        <td><span class="badge bg-primary-subtle text-primary border"><%= sm.plan %></span></td>
+                                        <td><%= sm.startDate %></td>
+                                        <td><%= sm.endDate %></td>
+                                        <td>
+                                            <span class="badge <%= sm.diasRestantes >= 5 ? 'bg-success' : (sm.diasRestantes >= 0 ? 'bg-warning text-dark' : 'bg-danger') %>">
+                                                <%= sm.diasRestantes >= 0 ? sm.diasRestantes + ' días' : 'Caducó' %>
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <span class="badge <%= sm.isActive ? 'bg-success' : 'bg-secondary' %>">
+                                                <%= sm.isActive ? 'Vigente' : 'Inactiva' %>
+                                            </span>
+                                        </td>
+                                    </tr>
+                                    <% }); %>
+                                <% } %>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- MODAL NUEVO PLAN -->
+    <div class="modal fade" id="modalNuevoPlan" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form method="POST" action="/pages/membresias.php">
+                    <input type="hidden" name="accion" value="crear">
+                    <div class="modal-header bg-primary text-white">
+                        <h5 class="modal-title fw-bold"><i class="fas fa-plus me-2"></i>Nuevo Plan de Membresía</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small">Nombre del Plan:</label>
+                            <input type="text" name="name" class="form-control" required placeholder="Ej: Bimestral">
+                        </div>
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small">Costo ($):</label>
+                                <input type="number" step="0.01" name="cost" class="form-control" required placeholder="100.00">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small">Duración (Días):</label>
+                                <input type="number" name="durationDays" class="form-control" required placeholder="60">
+                            </div>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="isActive" id="checkActiva" checked>
+                            <label class="form-check-label small fw-bold" for="checkActiva">Plan Activo para Venta</label>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-primary"><i class="fas fa-save me-1"></i> Guardar Plan</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL EDITAR PLAN -->
+    <div class="modal fade" id="modalEditarPlan" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form method="POST" action="/pages/membresias.php">
+                    <input type="hidden" name="accion" value="editar">
+                    <input type="hidden" name="id" id="edit_plan_id">
+                    <div class="modal-header bg-primary text-white">
+                        <h5 class="modal-title fw-bold"><i class="fas fa-edit me-2"></i>Editar Plan</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small">Nombre del Plan:</label>
+                            <input type="text" name="name" id="edit_plan_name" class="form-control" required>
+                        </div>
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small">Costo ($):</label>
+                                <input type="number" step="0.01" name="cost" id="edit_plan_cost" class="form-control" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small">Duración (Días):</label>
+                                <input type="number" name="durationDays" id="edit_plan_duration" class="form-control" required>
+                            </div>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="isActive" id="edit_plan_active">
+                            <label class="form-check-label small fw-bold" for="edit_plan_active">Plan Activo para Venta</label>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-primary"><i class="fas fa-save me-1"></i> Guardar Cambios</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        function editarPlan(p) {
+            document.getElementById('edit_plan_id').value = p.id;
+            document.getElementById('edit_plan_name').value = p.name;
+            document.getElementById('edit_plan_cost').value = p.cost;
+            document.getElementById('edit_plan_duration').value = p.durationDays;
+            document.getElementById('edit_plan_active').checked = p.isActive === 1;
+            new bootstrap.Modal(document.getElementById('modalEditarPlan')).show();
+        }
+    </script>
+</body>
+</html>

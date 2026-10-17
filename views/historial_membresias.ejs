@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Historial Membresías - Gimnasio La Fabrica</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <%- include('partials/navbar') %>
+    <div class="container-fluid">
+        <div class="row">
+            <%- include('partials/sidebar') %>
+            <main class="col-md-10 ms-sm-auto px-md-4 main-content">
+                <div class="page-header">
+                    <h1><i class="fas fa-history me-2"></i>Historial de Membresías Asignadas</h1>
+                </div>
+
+                <div class="card shadow-sm">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-light">
+                                <tr><th>Socio</th><th>Plan</th><th>Fecha Inicio</th><th>Fecha Vencimiento</th><th>Estado</th></tr>
+                            </thead>
+                            <tbody>
+                                <% if (historial.length === 0) { %>
+                                    <tr><td colspan="5" class="text-center py-4 text-muted">No hay registros de compras de membresías.</td></tr>
+                                <% } else { %>
+                                    <% historial.forEach(function(h) { %>
+                                    <tr>
+                                        <td class="fw-bold"><%= h.fullName %></td>
+                                        <td><span class="badge bg-primary-subtle text-primary border"><%= h.plan %></span></td>
+                                        <td><%= h.startDate %></td>
+                                        <td><%= h.endDate %></td>
+                                        <td>
+                                            <span class="badge <%= h.isActive ? 'bg-success' : 'bg-secondary' %>">
+                                                <%= h.isActive ? 'Vigente' : 'Concluida' %>
+                                            </span>
+                                        </td>
+                                    </tr>
+                                    <% }); %>
+                                <% } %>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

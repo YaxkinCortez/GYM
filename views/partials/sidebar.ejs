@@ -1,0 +1,71 @@
+<%
+const menu = [
+    { file: 'dashboard.php', icon: 'fas fa-chart-line', label: 'Panel de Control', admin: false },
+    { file: 'visitas.php', icon: 'fas fa-door-open', label: 'Control de Visitas', admin: false },
+    { file: 'clientes.php', icon: 'fas fa-users', label: 'Socios y Clientes', admin: false },
+    { file: 'membresias.php', icon: 'fas fa-id-card', label: 'Catálogo de Membresías', admin: false },
+    { file: 'historial_membresias.php', icon: 'fas fa-history', label: 'Historial de Membresías', admin: false },
+    { file: 'productos.php', icon: 'fas fa-box', label: 'Inventario de Productos', admin: false },
+    { file: 'ventas.php', icon: 'fas fa-shopping-cart', label: 'Punto de Venta', admin: false },
+    { file: 'historial_ventas.php', icon: 'fas fa-receipt', label: 'Historial de Ventas', admin: false },
+    { file: 'abonos.php', icon: 'fas fa-hand-holding-dollar', label: 'Abonos y Deudas', admin: false },
+    { file: 'gastos.php', icon: 'fas fa-wallet', label: 'Gastos y Egresos', admin: false },
+    { file: 'usuarios.php', icon: 'fas fa-user-shield', label: 'Usuarios del Sistema', admin: true },
+    { file: 'reportes.php', icon: 'fas fa-file-alt', label: 'Reportes y Contabilidad', admin: true },
+    { file: 'balance.php', icon: 'fas fa-scale-balanced', label: 'Balance Financiero', admin: true },
+    { file: 'respaldos.php', icon: 'fas fa-database', label: 'Copias de Seguridad', admin: true },
+    { file: 'tablas.php', icon: 'fas fa-table-list', label: 'Explorador de Tablas', admin: true },
+    { file: 'actualizaciones.php', icon: 'fas fa-cloud-arrow-down', label: 'Actualizaciones GitHub', admin: true }
+];
+const userRole = (usuario && usuario.role) ? usuario.role : 'user';
+const isAdmin = userRole === 'admin' || userRole === 'administrador';
+%>
+<!-- Desktop Sidebar -->
+<nav class="col-md-2 d-none d-md-block sidebar">
+    <div class="position-sticky pt-3">
+        <ul class="nav flex-column">
+            <% menu.forEach(function(item) { 
+                const clase = (pagina_activa === item.file) ? 'active' : '';
+                const bloqueado = item.admin && !isAdmin;
+            %>
+            <li class="nav-item">
+                <a class="nav-link <%= clase %>" href="/pages/<%= item.file %>">
+                    <i class="<%= item.icon %>"></i> <%= item.label %>
+                    <% if (bloqueado) { %><span class="badge bg-warning text-dark float-end small">🔒</span><% } %>
+                </a>
+            </li>
+            <% }); %>
+            <li class="nav-item mt-3 pt-3 border-top px-3 pb-2">
+                <a class="btn btn-outline-success w-100 fw-bold btn-sm py-2 d-flex align-items-center justify-content-center gap-2 shadow-sm" href="/descargar-proyecto-zip">
+                    <i class="fas fa-file-zipper"></i> Descargar Todo (.ZIP)
+                </a>
+            </li>
+        </ul>
+    </div>
+</nav>
+
+<!-- Mobile Offcanvas Sidebar -->
+<div class="offcanvas offcanvas-start bg-white d-md-none" tabindex="-1" id="sidebarMobile">
+    <div class="offcanvas-header border-bottom">
+        <h5 class="offcanvas-title fw-bold text-primary"><i class="fas fa-dumbbell me-2"></i> Menú</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+    </div>
+    <div class="offcanvas-body p-0">
+        <ul class="nav flex-column sidebar w-100">
+            <% menu.forEach(function(item) { 
+                const clase = (pagina_activa === item.file) ? 'active' : '';
+            %>
+            <li class="nav-item">
+                <a class="nav-link <%= clase %>" href="/pages/<%= item.file %>">
+                    <i class="<%= item.icon %>"></i> <%= item.label %>
+                </a>
+            </li>
+            <% }); %>
+            <li class="nav-item p-3 border-top">
+                <a class="btn btn-success w-100 fw-bold py-2 d-flex align-items-center justify-content-center gap-2 text-white" href="/descargar-proyecto-zip">
+                    <i class="fas fa-file-zipper"></i> Descargar Proyecto Completo (.ZIP)
+                </a>
+            </li>
+        </ul>
+    </div>
+</div>

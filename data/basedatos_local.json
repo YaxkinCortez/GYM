@@ -1,0 +1,344 @@
+{
+  "users": [
+    {
+      "id": 1,
+      "openId": null,
+      "name": "Administrador",
+      "email": "admin@gimnasio.local",
+      "password": "admin123",
+      "loginMethod": "local",
+      "role": "admin",
+      "createdAt": "2026-10-14 23:52:59",
+      "updatedAt": "2026-10-14 23:52:59",
+      "lastSignedIn": "2026-10-14 23:53:08"
+    },
+    {
+      "id": 2,
+      "openId": null,
+      "name": "Carlos Recepción",
+      "email": "carlos@gimnasio.local",
+      "password": "user123",
+      "loginMethod": "local",
+      "role": "user",
+      "createdAt": "2026-10-14 23:52:59",
+      "updatedAt": "2026-10-14 23:52:59",
+      "lastSignedIn": "2026-10-14 23:52:59"
+    }
+  ],
+  "memberships": [
+    {
+      "id": 1,
+      "name": "Mensual",
+      "cost": 50,
+      "durationDays": 30,
+      "isActive": 1
+    },
+    {
+      "id": 2,
+      "name": "Trimestral",
+      "cost": 130,
+      "durationDays": 90,
+      "isActive": 1
+    },
+    {
+      "id": 3,
+      "name": "Semestral",
+      "cost": 250,
+      "durationDays": 180,
+      "isActive": 1
+    },
+    {
+      "id": 4,
+      "name": "Anual",
+      "cost": 450,
+      "durationDays": 365,
+      "isActive": 1
+    },
+    {
+      "id": 5,
+      "name": "Diaria",
+      "cost": 25,
+      "durationDays": 1,
+      "isActive": 1
+    }
+  ],
+  "products": [
+    {
+      "id": 1,
+      "name": "Proteína Whey 1kg Vainilla",
+      "barcode": "7501001",
+      "description": "Concentrado 24g",
+      "purchasePrice": 45,
+      "salePrice": 75,
+      "quantity": 8,
+      "minStock": 3,
+      "isExternal": 0,
+      "createdAt": "2026-10-14 23:52:59",
+      "updatedAt": "2026-10-14 23:52:59"
+    },
+    {
+      "id": 2,
+      "name": "Agua Purificada 500ml",
+      "barcode": "7501002",
+      "description": "Bebida interna gimnasio",
+      "purchasePrice": 0.5,
+      "salePrice": 1.5,
+      "quantity": 25,
+      "minStock": 5,
+      "isExternal": 0,
+      "createdAt": "2026-10-14 23:52:59",
+      "updatedAt": "2026-10-14 23:52:59"
+    },
+    {
+      "id": 3,
+      "name": "Bebida Isotónica 600ml",
+      "barcode": "7501003",
+      "description": "Sabor moras",
+      "purchasePrice": 1.2,
+      "salePrice": 2.5,
+      "quantity": 18,
+      "minStock": 5,
+      "isExternal": 0,
+      "createdAt": "2026-10-14 23:52:59",
+      "updatedAt": "2026-10-14 23:52:59"
+    },
+    {
+      "id": 4,
+      "name": "Coca Cola 600ml (Externa)",
+      "barcode": "7501004",
+      "description": "Venta externa concesión",
+      "purchasePrice": 1,
+      "salePrice": 2,
+      "quantity": 20,
+      "minStock": 4,
+      "isExternal": 1,
+      "createdAt": "2026-10-14 23:52:59",
+      "updatedAt": "2026-10-14 23:52:59"
+    },
+    {
+      "id": 5,
+      "name": "Scoop de Proteína (Externo)",
+      "barcode": "7501005",
+      "description": "Dosis individual externa",
+      "purchasePrice": 0.8,
+      "salePrice": 2.5,
+      "quantity": 30,
+      "minStock": 5,
+      "isExternal": 1,
+      "createdAt": "2026-10-14 23:52:59",
+      "updatedAt": "2026-10-14 23:52:59"
+    }
+  ],
+  "clients": [
+    {
+      "id": 1,
+      "fullName": "Juan Pérez Silva",
+      "gender": "masculino",
+      "phone": "555-123-4567",
+      "address": "Av. Siempre Viva 123",
+      "dateOfBirth": "1995-04-12",
+      "fingerprint": "FP-8841",
+      "createdAt": "2026-10-14 23:52:59",
+      "updatedAt": "2026-10-14 23:52:59"
+    },
+    {
+      "id": 2,
+      "fullName": "María Gómez Rivas",
+      "gender": "femenino",
+      "phone": "555-987-6543",
+      "address": "Calle Juárez 45",
+      "dateOfBirth": "1998-08-22",
+      "fingerprint": "FP-9923",
+      "createdAt": "2026-10-14 23:52:59",
+      "updatedAt": "2026-10-14 23:52:59"
+    },
+    {
+      "id": 3,
+      "fullName": "Roberto Sánchez Vela",
+      "gender": "masculino",
+      "phone": "555-333-8822",
+      "address": "Col. Centro #89",
+      "dateOfBirth": "1990-11-05",
+      "fingerprint": "FP-4412",
+      "createdAt": "2026-10-14 23:52:59",
+      "updatedAt": "2026-10-14 23:52:59"
+    }
+  ],
+  "clientmemberships": [
+    {
+      "id": 1,
+      "clientId": 1,
+      "membershipId": 1,
+      "startDate": "2026-10-09",
+      "endDate": "2026-11-08",
+      "isActive": 1,
+      "createdAt": "2026-10-14 23:52:59",
+      "updatedAt": "2026-10-14 23:52:59"
+    },
+    {
+      "id": 2,
+      "clientId": 2,
+      "membershipId": 1,
+      "startDate": "2026-09-17",
+      "endDate": "2026-10-17",
+      "isActive": 1,
+      "createdAt": "2026-10-14 23:52:59",
+      "updatedAt": "2026-10-14 23:52:59"
+    },
+    {
+      "id": 3,
+      "clientId": 3,
+      "membershipId": 1,
+      "startDate": "2026-09-09",
+      "endDate": "2026-10-09",
+      "isActive": 0,
+      "createdAt": "2026-10-14 23:52:59",
+      "updatedAt": "2026-10-14 23:52:59"
+    }
+  ],
+  "global_sales": [
+    {
+      "id": 1,
+      "folio": "0001",
+      "userId": 1,
+      "clientId": 1,
+      "totalAmount": 76.5,
+      "totalInternal": 76.5,
+      "totalExternal": 0,
+      "paymentMethod": "efectivo",
+      "notes": "Venta inicial de apertura",
+      "createdAt": "2026-10-14 23:52:59"
+    }
+  ],
+  "sales": [
+    {
+      "id": 1,
+      "globalSaleId": 1,
+      "clientId": 1,
+      "userId": 1,
+      "totalAmount": 76.5,
+      "discountAmount": 0,
+      "finalAmount": 76.5,
+      "paymentMethod": "efectivo",
+      "notes": "",
+      "createdAt": "2026-10-14 23:52:59"
+    }
+  ],
+  "saleitems": [
+    {
+      "id": 1,
+      "saleId": 1,
+      "globalSaleId": 1,
+      "productId": 1,
+      "productName": "Proteína Whey 1kg Vainilla",
+      "quantity": 1,
+      "unitPrice": 75,
+      "subtotal": 75,
+      "userId": 1,
+      "createdAt": "2026-10-14 23:52:59"
+    },
+    {
+      "id": 2,
+      "saleId": 1,
+      "globalSaleId": 1,
+      "productId": 2,
+      "productName": "Agua Purificada 500ml",
+      "quantity": 1,
+      "unitPrice": 1.5,
+      "subtotal": 1.5,
+      "userId": 1,
+      "createdAt": "2026-10-14 23:52:59"
+    }
+  ],
+  "ventas_externas_realizadas": [],
+  "client_debts": [
+    {
+      "id": 1,
+      "clientId": 3,
+      "globalSaleId": null,
+      "description": "Compra a crédito: 1 Bebida Isotónica + 1 Scoop",
+      "totalAmount": 5,
+      "paidAmount": 0,
+      "remainingAmount": 5,
+      "status": "pendiente",
+      "userId": 2,
+      "createdAt": "2026-10-14 23:52:59",
+      "updatedAt": "2026-10-14 23:52:59"
+    }
+  ],
+  "debt_payments": [],
+  "membership_sales": [
+    {
+      "id": 1,
+      "clientId": 1,
+      "membershipId": 1,
+      "cost": 50,
+      "saleDate": "2026-10-09 10:00:00"
+    },
+    {
+      "id": 2,
+      "clientId": 2,
+      "membershipId": 1,
+      "cost": 50,
+      "saleDate": "2026-09-17 11:30:00"
+    }
+  ],
+  "visits": [
+    {
+      "id": 1,
+      "clientId": 1,
+      "visitDate": "2026-10-14",
+      "checkInTime": "2026-10-14 23:52:59",
+      "checkOutTime": null,
+      "createdAt": "2026-10-14 23:52:59"
+    }
+  ],
+  "temp_visits": [
+    {
+      "id": 1,
+      "visitorName": "Carlos Gómez (Pase Diario)",
+      "checkInTime": "2026-10-14 23:52:59",
+      "membershipCost": 25
+    }
+  ],
+  "expenses": [
+    {
+      "id": 1,
+      "description": "Compra de productos de limpieza y desinfectante",
+      "cost": 35,
+      "expenseDate": "2026-10-14",
+      "userId": 1,
+      "createdAt": "2026-10-14 23:52:59",
+      "updatedAt": "2026-10-14 23:52:59"
+    },
+    {
+      "id": 2,
+      "description": "Mantenimiento de cables en polea multifuncional",
+      "cost": 60,
+      "expenseDate": "2026-10-14",
+      "userId": 1,
+      "createdAt": "2026-10-14 23:52:59",
+      "updatedAt": "2026-10-14 23:52:59"
+    }
+  ],
+  "sistema_actualizaciones": {
+    "repo": "YaxkinCortez/GYM",
+    "versionActual": "v1.2.0",
+    "ultimaComprobacion": "2026-10-14 23:52:59",
+    "actualizacionDisponible": null,
+    "comprobacionAutomatica": true,
+    "alertaNotificacion": null,
+    "puntosDeRestauracion": []
+  },
+  "historial_actualizaciones": [
+    {
+      "id": 1,
+      "version": "v1.2.0",
+      "fecha": "2026-10-14 09:00:00",
+      "descripcion": "Versión base estabilizada con soporte autónomo y motor portable.",
+      "origen": "GitHub (YaxkinCortez/GYM)",
+      "estado": "instalada",
+      "baseDeDatosPreservada": true
+    }
+  ]
+}

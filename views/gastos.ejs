@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gastos y Egresos - Gimnasio La Fabrica</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <%- include('partials/navbar') %>
+    <div class="container-fluid">
+        <div class="row">
+            <%- include('partials/sidebar') %>
+            <main class="col-md-10 ms-sm-auto px-md-4 main-content">
+                <div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div>
+                        <h1><i class="fas fa-wallet me-2"></i>Control de Gastos y Egresos</h1>
+                        <p class="text-muted mb-0 small">Registro de gastos operativos, suministros y reparaciones del gimnasio</p>
+                    </div>
+                    <button class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#modalGasto">
+                        <i class="fas fa-plus me-1"></i> Registrar Gasto
+                    </button>
+                </div>
+
+                <% if (mensaje) { %>
+                    <div class="alert alert-success alert-dismissible fade show">
+                        <%= mensaje %>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                <% } %>
+
+                <div class="card shadow-sm">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>#</th>
+                                    <th>Concepto / Descripción</th>
+                                    <th>Monto</th>
+                                    <th>Fecha</th>
+                                    <th>Registró</th>
+                                    <th class="text-end">Acción</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <% if (gastos.length === 0) { %>
+                                    <tr><td colspan="6" class="text-center py-4 text-muted">No hay gastos registrados en el sistema.</td></tr>
+                                <% } else { %>
+                                    <% gastos.forEach(function(g) { %>
+                                    <tr>
+                                        <td>#<%= g.id %></td>
+                                        <td class="fw-bold"><%= g.description %></td>
+                                        <td class="text-danger fw-bold fs-6">-$<%= g.cost.toFixed(2) %></td>
+                                        <td><%= g.expenseDate %></td>
+                                        <td><%= g.usuario_nombre || 'Admin' %></td>
+                                        <td class="text-end">
+                                            <form method="POST" action="/pages/gastos.php" class="m-0 d-inline" onsubmit="return confirm('¿Eliminar este gasto?');">
+                                                <input type="hidden" name="accion" value="eliminar">
+                                                <input type="hidden" name="id" value="<%= g.id %>">
+                                                <button class="btn btn-sm btn-outline-danger"><i class="fas fa-trash-alt"></i></button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                    <% }); %>
+                                <% } %>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- MODAL NUEVO GASTO -->
+    <div class="modal fade" id="modalGasto" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form method="POST" action="/pages/gastos.php">
+                    <input type="hidden" name="accion" value="crear">
+                    <div class="modal-header bg-danger text-white">
+                        <h5 class="modal-title fw-bold"><i class="fas fa-wallet me-2"></i>Registrar Nuevo Gasto</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small">Concepto / Descripción:</label>
+                            <input type="text" name="description" class="form-control" required placeholder="Ej: Compra de toallas y desinfectante">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small">Costo ($):</label>
+                            <div class="input-group">
+                                <span class="input-group-text">$</span>
+                                <input type="number" step="0.01" name="cost" class="form-control" required placeholder="25.00">
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small">Fecha del Gasto:</label>
+                            <input type="date" name="expenseDate" class="form-control" value="<%= hoy %>" required>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-danger"><i class="fas fa-save me-1"></i> Guardar Gasto</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

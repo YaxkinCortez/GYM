@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Acceso Restringido - Gimnasio La Fabrica</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <%- include('partials/navbar') %>
+    <div class="container-fluid">
+        <div class="row">
+            <%- include('partials/sidebar') %>
+            <main class="col-md-10 ms-sm-auto px-md-4 main-content">
+                <div class="text-center py-5">
+                    <div class="display-1 text-danger mb-3"><i class="fas fa-lock"></i></div>
+                    <h2 class="fw-bold text-dark">Acceso Restringido</h2>
+                    <p class="text-muted">Este módulo requiere permisos de <strong>Administrador</strong>. Tu cuenta actual tiene perfil de Cajero/Recepción.</p>
+                    <a href="/pages/dashboard.php" class="btn btn-primary mt-3">
+                        <i class="fas fa-arrow-left me-1"></i> Volver al Panel de Control
+                    </a>
+                </div>
+            </main>
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
