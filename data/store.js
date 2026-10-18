@@ -413,6 +413,17 @@ if (!store.config_respaldos) {
 }
 
 // Persistencia segura de la base de datos local
+function marcarReinicioPendiente() {
+  // Deja constancia en la BD de que hace falta reiniciar el servidor para
+  // cargar archivos nuevos (server.js/views). El lanzador .bat/.sh y el
+  // propio server.js lo procesan; si no se reinicia aun, el contador
+  // GF_REINTENTO evita bucles infinitos.
+  try {
+    if (!store.config_respaldos) store.config_respaldos = {};
+    store.config_respaldos.reinicioPendiente = true;
+  } catch (_) {}
+}
+
 export function guardarBaseDatos() {
   try {
     const dir = path.dirname(RUTA_BD_LOCAL);
