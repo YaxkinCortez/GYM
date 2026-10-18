@@ -99,7 +99,22 @@ if not errorlevel 1 (
 )
 
 :: Arrancar server.js en segundo plano de manera limpia y silenciosa
-start "Gimnasio La Fabrica - Servidor" /MIN cmd /c ""%NODE_CMD%" "%~dp0server.js""
+:: El bucle interno se relanza solo si el servidor se auto-reinicio tras una actualizacion (codigo 10)
+start "Gimnasio La Fabrica - Servidor" /MIN cmd /c "set "GF_REINTENTO=0" & goto :servidor_bucle"
+goto lanzador_listo
+
+:servidor_bucle
+"%NODE_CMD%" "%~dp0server.js"
+if errorlevel 10 if not errorlevel 11 (
+    if "%GF_REINTENTO%"=="3" exit
+    set /a GF_REINTENTO+=1
+    echo [INFO] El servidor se reinicio por actualizacion. Esperando 2 segundos...
+    ping 127.0.0.1 -n 3 >nul 2>&1
+    goto :servidor_bucle
+)
+exit
+
+:lanzador_listo
 
 :: Esperar a que el puerto 3000 este escuchando (maximo 6 intentos)
 for /l %%i in (1,1,6) do (

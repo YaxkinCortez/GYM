@@ -3,7 +3,7 @@ import session from 'express-session';
 import cookieParser from 'cookie-parser';
 import path from 'path';
 import fs from 'fs';
-import { execSync } from 'child_process';
+import { execSync, spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import AdmZip from 'adm-zip';
 import {
@@ -70,6 +70,74 @@ export function generarZipProyecto() {
 }
 
 const esScriptPrincipal = Boolean(process.argv[1] && (process.argv[1].endsWith('server.js') || process.argv[1] === fileURLToPath(import.meta.url)));
+
+// ==================== AUTO-REINICIO TRAS ACTUALIZACIÓN ====================
+// Ruta del marcador que deja comprobar_y_actualizar.js cuando la instalación
+// reemplazó archivos del propio servidor (server.js, package.json, views/...).
+const RUTA_MARCADOR_REINICIO = path.join(__dirname, 'data', 'reiniciar_pendiente.flag');
+let reinicioEnCurso = false;
+
+/**
+ * Relanza server.js en un proceso nuevo (cargando ya los archivos actualizados)
+ * y termina este proceso de forma limpia. Se usa al instalar una actualización
+ * con la app abierta: el navegador solo pierde unos segundos de conexión y,
+ * como las sesiones se guardan en cookies firmadas, NO se cierra la sesión.
+ */
+function relanzarServidor(motivo = 'actualización instalada') {
+  if (reinicioEnCurso) return;
+  reinicioEnCurso = true;
+  console.log(`\n[Auto-Reinicio] ${motivo}. Relanzando el servidor con los archivos nuevos...`);
+  try { guardarBaseDatos(); } catch (_) {}
+  try { fs.unlinkSync(RUTA_MARCADOR_REINICIO); } catch (_) {}
+
+  const args = process.argv.slice(2);
+  // GF_REINTENTO: contador anti-bucle. Si el proceso anterior murió antes de
+  // que el nuevo tomara el puerto, el lanzador (.bat/.sh) reintentará con este
+  // código de salida; nunca se acumulan más de 3 intentos.
+  const reintento = parseInt(process.env.GF_REINTENTO || '0', 10) + 1;
+  const hijo = spawn(process.execPath, [__filename, ...args], {
+    cwd: __dirname,
+    detached: true,
+    stdio: 'ignore',
+    env: { ...process.env, GF_RELANZADO: '1', GF_REINTENTO: String(reintento) }
+  });
+  hijo.on('error', (errHijo) => {
+    console.error('[Auto-Reinicio] No se pudo lanzar el nuevo proceso:', errHijo.message);
+    reinicioEnCurso = false;
+  });
+  hijo.unref();
+
+  // Esperar a que el proceso nuevo tome el puerto antes de morir. El código de
+  // salida 10 indica al lanzador (iniciar_gimnasio.bat/sh) que debe volver a
+  // ejecutar server.js en la misma ventana para completar el reinicio.
+  setTimeout(() => process.exit(10), 1500);
+}
+
+// Watchdog: si quedó un marcador de reinicio pendiente (por ejemplo, se
+// instaló una actualización mientras el PC se apagó a mitad del proceso),
+// este server.js recién iniciado ES el reinicio: limpiar el marcador.
+if (esScriptPrincipal && fs.existsSync(RUTA_MARCADOR_REINICIO)) {
+  try { fs.unlinkSync(RUTA_MARCADOR_REINICIO); } catch (_) {}
+  console.log('[Auto-Reinicio] Marcador de reinicio procesado: sistema actualizado cargado correctamente.');
+}
+
+// Si otro proceso ya está escuchando en el puerto configurado (por ejemplo,
+// el usuario volvió a ejecutar iniciar_gimnasio.bat con la app ya abierta),
+// NO abrir un segundo servidor sobre la misma base de datos: salir limpiamente.
+if (esScriptPrincipal) {
+  const netMod = await import('net');
+  const puertoLibre = await new Promise((resolverPuerto) => {
+    const probar = netMod.default.createServer();
+    probar.once('error', () => resolverPuerto(false));
+    probar.once('listening', () => probar.close(() => resolverPuerto(true)));
+    probar.listen(PORT, '127.0.0.1');
+  });
+  if (!puertoLibre) {
+    console.log(`[Gimnasio La Fabrica] Ya existe un servidor activo en el puerto ${PORT}.`);
+    console.log('[Gimnasio La Fabrica] Este lanzador no duplicará el servidor; puedes usar la ventana ya abierta.');
+    process.exit(0);
+  }
+}
 
 // Scheduler de comprobación para respaldos automáticos programados a una hora específica
 const schedulerRespaldos = setInterval(() => {
@@ -1726,11 +1794,67 @@ app.post(['/actualizaciones', '/pages/actualizaciones.php'], requireAdmin, async
       mensaje: `El sistema se actualizó correctamente de ${versionAnterior} a ${actualizacion.version}. Tus socios, cobros, adeudos e inventario fueron respaldados y preservados al 100%.`
     };
 
+    // Si la instalación reemplazó archivos propios del servidor (server.js o
+    // views/), ofrecer el reinicio en caliente para cargar los archivos nuevos.
+    const archivosRecibidos = Array.isArray(actualizacion.archivos) ? actualizacion.archivos : [];
+    const tocaArchivosServidor =
+      fs.existsSync(RUTA_MARCADOR_REINICIO) ||
+      archivosRecibidos.some(a => /(^|\/)(server\.js|package(-lock)?\.json|views\/)/i.test(String(a)));
+
+    if (tocaArchivosServidor) {
+      return res.send(`<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>Actualización instalada</title>
+<style>body{font-family:system-ui,sans-serif;background:#0f172a;color:#e2e8f0;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+.card{text-align:center;max-width:560px;padding:2rem}.ok{color:#22c55e;font-size:3rem}.btn{display:inline-block;margin-top:1rem;padding:.6rem 1.4rem;border-radius:.5rem;text-decoration:none;font-weight:600}
+.verde{background:#22c55e;color:#fff}.gris{background:#334155;color:#cbd5e1;margin-left:.5rem}</style></head>
+<body><div class="card"><div class="ok">✅</div><h2>Actualización ${actualizacion.version} instalada</h2>
+<p>La nueva versión incluye cambios en el propio servidor. Para dejarla funcionando al 100%, pulsa <b>Reiniciar ahora</b>.<br>
+<b>No cerrarás sesión</b>: el navegador se reconecta solo en unos segundos y tus datos quedan intactos.</p>
+<form method="POST" action="/pages/actualizaciones.php" style="margin-top:1rem">
+<input type="hidden" name="accion" value="reiniciar_servidor">
+<button type="submit" class="btn verde" style="border:0;cursor:pointer;font-size:1rem">🔄 Reiniciar ahora</button>
+<a class="btn gris" href="/pages/actualizaciones.php">Reiniciar más tarde</a>
+</form></div></body></html>`);
+    }
+
     return res.redirect(
       '/pages/actualizaciones.php?msg=' +
         encodeURIComponent(`🎉 ¡Actualización a ${actualizacion.version} instalada con éxito! La base de datos local fue preservada intacta.`) +
         '&msg_type=success'
     );
+  }
+
+  if (accion === 'reiniciar_servidor') {
+    // Reinicio manual/programado tras instalar una actualización "en caliente"
+    // desde la webapp con el servidor abierto. Las sesiones viven en cookies
+    // firmadas, así que el usuario NO tendrá que volver a iniciar sesión.
+    try { guardarBaseDatos(); } catch (_) {}
+    res.send(`<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>Reiniciando...</title>
+<style>body{font-family:system-ui,sans-serif;background:#0f172a;color:#e2e8f0;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+.card{text-align:center;max-width:520px;padding:2rem}.spin{font-size:3rem;animation:g 1s linear infinite;display:inline-block}
+@keyframes g{to{transform:rotate(360deg)}}.btn{display:inline-block;margin-top:1rem;padding:.6rem 1.4rem;background:#22c55e;color:#fff;border-radius:.5rem;text-decoration:none;font-weight:600}</style></head>
+<body><div class="card"><span class="spin">⚙️</span><h2>Reiniciando el servidor...</h2>
+<p>Se están cargando los archivos de la nueva versión. Esta ventana se actualizará automáticamente en unos segundos.</p>
+<a class="btn" href="/" id="reintento" style="display:none">Abrir el sistema ahora</a></div>
+<script>
+const inicio = Date.now();
+const comprobar = setInterval(() => {
+  fetch('/login.php', { cache: 'no-store' })
+    .then(r => {
+      if (r.ok || r.status < 500) {
+        clearInterval(comprobar);
+        location.replace('/pages/dashboard.php');
+      }
+    })
+    .catch(() => {});
+  if (Date.now() - inicio > 45000) {
+    clearInterval(comprobar);
+    document.getElementById('reintento').style.display = 'inline-block';
+  }
+}, 1200);
+</script></body></html>`);
+    // Darse 800ms para enviar la respuesta al navegador antes de relanzarse.
+    setTimeout(() => relanzarServidor('Reinicio solicitado desde la webapp tras actualizar.'), 800);
+    return;
   }
 
   if (accion === 'restaurar_punto') {

@@ -231,6 +231,14 @@ function descomprimirYActualizarArchivos(rutaZip) {
   }
 
   // 2. Copiar archivos excluyendo ESTRICTAMENTE la base de datos local y respaldos
+  // NOTA: server.js sigue en ejecución mientras se instala la actualización, por lo
+  // que NO se puede borrar/reemplazar un archivo .js abierto (EPERM en Windows).
+  // El servidor detecta estos marcadores y se auto-relanza al terminar la instalación.
+  const archivosReinicioServidor = new Set(['server.js', 'package.json', 'package-lock.json']);
+  const carpetaReinicioServidor = 'views';
+  const marcadorReinicio = path.join(__dirname, 'data', 'reiniciar_pendiente.flag');
+  let reinicioNecesario = false;
+
   const carpetasProtegidas = ['respaldos', 'node_modules', '.git', 'nodejs'];
   // NOTA: 'version.json' debe preservarse junto con la base de datos. Si se
   // sobrescribiera con el version.json del repositorio, tras instalar una
@@ -247,6 +255,7 @@ function descomprimirYActualizarArchivos(rutaZip) {
 
       if (stat.isDirectory()) {
         if (carpetasProtegidas.includes(item)) continue;
+        if (item === carpetaReinicioServidor) reinicioNecesario = true;
         if (!fs.existsSync(destItem)) fs.mkdirSync(destItem, { recursive: true });
         copiarRecursivo(srcItem, destItem);
       } else {
@@ -260,12 +269,25 @@ function descomprimirYActualizarArchivos(rutaZip) {
           console.log(' [PROTECCIÓN] Base de datos local conservada sin alteraciones.');
           continue;
         }
+        if (archivosReinicioServidor.has(item)) reinicioNecesario = true;
         fs.copyFileSync(srcItem, destItem);
       }
     }
   }
 
   copiarRecursivo(origen, __dirname);
+
+  // Dejar marcador para que el server.js en ejecución se auto-relance y cargue
+  // los archivos nuevos. Si la instalación ocurre con el servidor CERRADO, el
+  // marcador simplemente será ignorado/limpiado en el próximo arranque.
+  try {
+    if (reinicioNecesario) {
+      fs.writeFileSync(marcadorReinicio, new Date().toISOString());
+      console.log(' [REINICIO] Archivos del servidor actualizados: se programó reinicio automático.');
+    } else if (fs.existsSync(marcadorReinicio)) {
+      fs.unlinkSync(marcadorReinicio);
+    }
+  } catch (_) {}
 
   // Limpiar temporales
   try {
