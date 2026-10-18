@@ -20,9 +20,18 @@ import fs from 'fs';
 import path from 'path';
 import https from 'https';
 import http from 'http';
+import dns from 'dns';
 import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import AdmZip from 'adm-zip';
+import {
+  parsearVersion,
+  formatearVersion,
+  incrementarVersion,
+  compararVersiones,
+  obtenerVersionLocal,
+  guardarVersionLocal
+} from './data/versionManager.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -59,6 +68,30 @@ function guardarInfoVersion(info) {
   }
 }
 
+function verificarConexionInternet(timeoutMs = 1200) {
+  return new Promise((resolve) => {
+    let respondido = false;
+    const timer = setTimeout(() => {
+      if (!respondido) {
+        respondido = true;
+        resolve(false);
+      }
+    }, timeoutMs);
+
+    dns.lookup('github.com', (err) => {
+      if (!respondido) {
+        respondido = true;
+        clearTimeout(timer);
+        if (!err) return resolve(true);
+        // Segundo intento rápido con google.com
+        dns.lookup('google.com', (err2) => {
+          resolve(!err2);
+        });
+      }
+    });
+  });
+}
+
 function hacerPeticionHttps(url, opciones = {}) {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
@@ -71,7 +104,7 @@ function hacerPeticionHttps(url, opciones = {}) {
         'Accept': 'application/vnd.github.v3+json',
         ...(opciones.headers || {})
       },
-      timeout: 8000
+      timeout: 2500
     };
 
     const req = cliente.get(reqOpciones, (res) => {
@@ -199,7 +232,7 @@ function descomprimirYActualizarArchivos(rutaZip) {
 
   // 2. Copiar archivos excluyendo ESTRICTAMENTE la base de datos local y respaldos
   const carpetasProtegidas = ['respaldos', 'node_modules', '.git', 'nodejs'];
-  const archivosProtegidos = ['basedatos_local.json', '.env', 'Gimnasio_La_Fabrica_Completo.zip'];
+  const archivosProtegidos = ['basedatos_local.json', '.env', 'Gimnasio_La_Fabrica_Completo.zip', 'iniciar_gimnasio.bat', 'descargar_node_portable.bat'];
 
   function copiarRecursivo(srcDir, destDir) {
     const items = fs.readdirSync(srcDir);
@@ -275,6 +308,15 @@ function regenerarZipProyecto() {
 }
 
 async function comprobarYActualizar() {
+  // Watchdog de seguridad: Máximo 3 segundos para todo el proceso.
+  // Si la red se demora o hay latencia, se libera el proceso para entrar al gimnasio sin demoras.
+  const timeoutSeguridad = setTimeout(() => {
+    console.log('\n [DEGRADACIÓN ELEGANTE] Tiempo límite de comprobación alcanzado.');
+    console.log(' Procediendo directamente al inicio del programa y pantalla de login...');
+    process.exit(0);
+  }, 3000);
+  timeoutSeguridad.unref();
+
   const versionInfo = obtenerInfoVersion();
   const repo = process.env.REPO_GITHUB || versionInfo.repo || 'YaxkinCortez/GYM';
   const args = process.argv.slice(2);
@@ -284,8 +326,8 @@ async function comprobarYActualizar() {
   console.log('         GIMNASIO LA FÁBRICA - COMPROBADOR DE VERSIONES GITHUB');
   console.log('===============================================================================');
   console.log(` Repositorio configurado: https://github.com/${repo}`);
-  console.log(` Versión actual local:   ${versionInfo.version}`);
-  console.log(' Conectando con GitHub para verificar actualizaciones disponibles...');
+  const versionLocal = obtenerVersionLocal();
+  console.log(` Versión actual local:   ${versionLocal}`);
 
   let actualizacionDisponible = null;
 
@@ -294,11 +336,7 @@ async function comprobarYActualizar() {
     if (fs.existsSync(ARCHIVO_FLAG_SIMULAR)) {
       try { fs.unlinkSync(ARCHIVO_FLAG_SIMULAR); } catch (_) {}
     }
-    const partes = (versionInfo.version || 'v1.0.0').replace('v', '').split('.');
-    const mayor = partes[0] || '1';
-    const menor = parseInt(partes[1] || '0', 10) + 1;
-    const parche = partes[2] || '0';
-    const nuevaVer = `v${mayor}.${menor}.${parche}`;
+    const nuevaVer = incrementarVersion(versionLocal);
 
     actualizacionDisponible = {
       tipo: 'simulacion',
@@ -307,60 +345,113 @@ async function comprobarYActualizar() {
       urlDescarga: `https://github.com/${repo}/archive/refs/heads/main.zip`,
       commitSha: 'simulada_' + Date.now().toString(16)
     };
-    console.log('\n [MODO PRUEBA] Se ha solicitado simular actualización a: ' + nuevaVer);
+    console.log('\n [MODO PRUEBA] Simulación de incremento a versión superior: ' + nuevaVer);
   } else {
-    // 2. Comprobar releases oficiales en GitHub
-    try {
-      const respRelease = await hacerPeticionHttps(`https://api.github.com/repos/${repo}/releases/latest`);
-      if (respRelease.statusCode === 200) {
-        const releaseData = JSON.parse(respRelease.body);
-        const tag = releaseData.tag_name || releaseData.name;
-        if (tag && tag !== versionInfo.version) {
-          actualizacionDisponible = {
-            tipo: 'release',
-            version: tag,
-            descripcion: releaseData.body || 'Nueva versión publicada en GitHub.',
-            urlDescarga: releaseData.zipball_url || `https://github.com/${repo}/archive/refs/tags/${tag}.zip`,
-            commitSha: releaseData.target_commitish || ''
-          };
-        }
-      }
-    } catch (errRelease) {
-      // Continuar con verificación de commits
+    // 0. Pre-verificación de conectividad (Patrón Graceful Degradation)
+    const tieneInternet = await verificarConexionInternet(1200);
+    if (!tieneInternet) {
+      console.log('\n===============================================================================');
+      console.log(' [PATRÓN DE DEGRADACIÓN ELEGANTE: MODO FUERA DE LÍNEA]');
+      console.log(' No se detectó acceso a Internet activo.');
+      console.log(' Saltando la comprobación de GitHub para permitir que la aplicación proceda');
+      console.log(' directamente a la pantalla de inicio de sesión sin demoras ni bloqueos.');
+      console.log('===============================================================================');
+      process.exit(0);
     }
 
-    // 3. Si no hay release nuevo, comprobar commits recientes
-    if (!actualizacionDisponible) {
+    console.log(' Conectando con GitHub para verificar actualizaciones disponibles...');
+
+    let versionRemota = null;
+    let descripcionRemota = 'Nueva versión desde GitHub';
+    let urlDescargaRemota = `https://github.com/${repo}/archive/refs/heads/main.zip`;
+    let commitShaRemoto = '';
+
+    // A. Consultar el archivo version.json remoto en GitHub
+    try {
+      const respVer = await hacerPeticionHttps(`https://raw.githubusercontent.com/${repo}/main/data/version.json`);
+      if (respVer.statusCode === 200) {
+        const vData = JSON.parse(respVer.body);
+        if (vData && vData.version) {
+          versionRemota = formatearVersion(parsearVersion(vData.version));
+          descripcionRemota = vData.descripcion || descripcionRemota;
+          commitShaRemoto = vData.ultimoCommitSha || '';
+        }
+      }
+    } catch (_) {}
+
+    // B. Si no se obtuvo version.json, comprobar releases oficiales
+    if (!versionRemota) {
+      try {
+        const respRelease = await hacerPeticionHttps(`https://api.github.com/repos/${repo}/releases/latest`);
+        if (respRelease.statusCode === 200) {
+          const releaseData = JSON.parse(respRelease.body);
+          const tag = releaseData.tag_name || releaseData.name;
+          if (tag) {
+            versionRemota = formatearVersion(parsearVersion(tag));
+            descripcionRemota = releaseData.body || descripcionRemota;
+            urlDescargaRemota = releaseData.zipball_url || urlDescargaRemota;
+            commitShaRemoto = releaseData.target_commitish || '';
+          }
+        }
+      } catch (_) {}
+    }
+
+    // C. Si no hay release, comprobar commits recientes
+    if (!versionRemota) {
       try {
         const respCommits = await hacerPeticionHttps(`https://api.github.com/repos/${repo}/commits?per_page=1`);
         if (respCommits.statusCode === 200) {
           const commits = JSON.parse(respCommits.body);
           if (Array.isArray(commits) && commits.length > 0) {
             const latest = commits[0];
-            const sha = latest.sha;
-            // Si el commit en GitHub difiere del último registrado
-            if (sha && sha !== versionInfo.ultimoCommitSha) {
-              const msg = latest.commit?.message ? latest.commit.message.split('\n')[0] : 'Mejoras en el sistema';
-              actualizacionDisponible = {
-                tipo: 'commit',
-                version: `v1.0.1-${sha.substring(0, 7)}`,
-                descripcion: `Nuevo commit en GitHub: "${msg}"`,
-                urlDescarga: `https://github.com/${repo}/archive/refs/heads/main.zip`,
-                commitSha: sha
-              };
+            const msg = latest.commit?.message ? latest.commit.message.split('\n')[0] : '';
+            const match = msg.match(/(\d+\.\d+(?:\.\d+)?)/);
+            if (match) {
+              versionRemota = formatearVersion(parsearVersion(match[1]));
             }
+            commitShaRemoto = latest.sha;
           }
         }
       } catch (errCommits) {
-        console.warn(' [AVISO RED] No fue posible comunicarse con GitHub:', errCommits.message);
+        console.log(' [DEGRADACIÓN ELEGANTE] Error temporal de red con GitHub. Continuando con la versión local...');
       }
+    }
+
+    // D. Evaluación de versión con Protección Anti-Retrocesos
+    if (versionRemota) {
+      const diff = compararVersiones(versionRemota, versionLocal);
+      if (diff > 0) {
+        // La versión de GitHub es ESTRICTAMENTE MAYOR
+        actualizacionDisponible = {
+          tipo: 'github',
+          version: versionRemota,
+          descripcion: descripcionRemota,
+          urlDescarga: urlDescargaRemota,
+          commitSha: commitShaRemoto
+        };
+      } else {
+        // La versión local es MAYOR o IGUAL. ¡NO DESCARGAR NADA!
+        console.log('\n===============================================================================');
+        console.log(' [PROTECCIÓN ANTI-RETROCESOS ACTIVADA]');
+        console.log(` Versión local instalada: ${versionLocal}`);
+        console.log(` Versión remota en GitHub: ${versionRemota}`);
+        console.log(' Tu versión local es SUPERIOR o IGUAL a la de GitHub.');
+        console.log(' No se realiza ninguna descarga para evitar dar un retroceso en el software.');
+        console.log(' Procediendo directamente al inicio del programa y pantalla de login...');
+        console.log('===============================================================================');
+        process.exit(0);
+      }
+    } else {
+      console.log(`\n [SISTEMA AL DÍA] No se detectó ninguna versión superior en GitHub.`);
+      console.log(` Continuando con la versión local ${versionLocal}...`);
+      process.exit(0);
     }
   }
 
-  // 4. Si no hay nueva versión, el sistema ya está al día
+  // 4. Si no hay actualización disponible, continuar
   if (!actualizacionDisponible) {
-    console.log(`\n [AL DÍA] Tu sistema cuenta con la versión más reciente (${versionInfo.version}).`);
-    console.log(' No se requieren descargas. Continuando con el inicio de la aplicación...');
+    console.log(`\n [SISTEMA LISTO] Continuando ejecución local con versión ${versionLocal}.`);
+    console.log(' Procediendo directamente al inicio del servidor y pantalla de login...');
     process.exit(0);
   }
 
@@ -420,4 +511,7 @@ async function comprobarYActualizar() {
   }
 }
 
-comprobarYActualizar();
+comprobarYActualizar().catch(err => {
+  console.warn('[Actualizador] Conexión omitida o error no fatal:', err.message);
+  process.exit(0);
+});

@@ -1,8 +1,8 @@
 {
-  "version": "v1.0.1-7c54118",
+  "version": "1.0.5",
   "repo": "YaxkinCortez/GYM",
-  "ultimoCommitSha": "7c54118250fe9b1e0a60c6598f9f8bc2ea848699",
-  "fechaActualizacion": "2026-10-14",
-  "descripcion": "Nuevo commit en GitHub: \"1.0.0\"",
+  "ultimoCommitSha": "a43e83eb51f971d083731bb8855ad3a28511cc09",
+  "fechaActualizacion": "2026-10-18",
+  "descripcion": "Versión 1.0.5 - Eliminado guardado automático al ejecutar, descarga garantizada de la última versión y respaldo exclusivamente a la hora asignada",
   "estado": "actualizado_exitoso"
 }

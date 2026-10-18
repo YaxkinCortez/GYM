@@ -390,6 +390,28 @@ export function getDaysDiff(futureDateStr, baseDateStr = getTodayStr()) {
   return Math.round(diffTime / (1000 * 60 * 60 * 24));
 }
 
+// Inicializar configuración de respaldos si no existe
+if (!store.config_respaldos) {
+  store.config_respaldos = {
+    rutaPersonalizada: '',
+    respaldoAutomaticoDiario: true,
+    respaldoProgramadoActivo: true,
+    horaRespaldo: '22:00',
+    ultimoRespaldoRuta: null,
+    ultimoArchivoGenerado: null,
+    ultimoRespaldoDiarioFecha: null,
+    ultimoRespaldoProgramadoFecha: null,
+    historialRespaldos: []
+  };
+} else {
+  if (typeof store.config_respaldos.respaldoProgramadoActivo === 'undefined') {
+    store.config_respaldos.respaldoProgramadoActivo = true;
+  }
+  if (!store.config_respaldos.horaRespaldo) {
+    store.config_respaldos.horaRespaldo = '22:00';
+  }
+}
+
 // Persistencia segura de la base de datos local
 export function guardarBaseDatos() {
   try {
@@ -400,6 +422,164 @@ export function guardarBaseDatos() {
     fs.writeFileSync(RUTA_BD_LOCAL, JSON.stringify(store, null, 2), 'utf-8');
   } catch (error) {
     console.warn('[BD Local] No se pudo guardar la base de datos localmente:', error.message);
+  }
+}
+
+export function realizarRespaldoEnRuta(rutaDestino, esAutomatico = false, etiquetaTipo = null) {
+  if (!rutaDestino || typeof rutaDestino !== 'string' || !rutaDestino.trim()) {
+    return {
+      exito: false,
+      error: 'Debe especificar una ruta de carpeta válida (por ejemplo: D:\\Respaldos_Gimnasio o E:\\USB_Seguridad).'
+    };
+  }
+
+  const rutaLimpia = rutaDestino.trim();
+
+  try {
+    if (!fs.existsSync(rutaLimpia)) {
+      fs.mkdirSync(rutaLimpia, { recursive: true });
+    }
+
+    const ahora = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const stamp = `${ahora.getFullYear()}-${pad(ahora.getMonth() + 1)}-${pad(ahora.getDate())}_${pad(ahora.getHours())}-${pad(ahora.getMinutes())}-${pad(ahora.getSeconds())}`;
+    const nombreArchivo = `backup_gimnasio_${stamp}.json`;
+    const rutaCompleta = path.join(rutaLimpia, nombreArchivo);
+
+    const tipoFinal = etiquetaTipo || (esAutomatico ? 'Automático Diario' : 'Manual a Ruta Específica');
+
+    const snapshot = {
+      sistema: 'Gimnasio La Fábrica',
+      version: '1.0.4',
+      fechaRespaldo: formatDateTime(ahora),
+      tipoRespaldo: tipoFinal,
+      resumen: {
+        socios: (store.clients || []).length,
+        productos: (store.products || []).length,
+        ventasTotales: (store.global_sales || []).length,
+        pagosMembresia: (store.member_payments || []).length,
+        usuarios: (store.users || []).length
+      },
+      datos: store
+    };
+
+    fs.writeFileSync(rutaCompleta, JSON.stringify(snapshot, null, 2), 'utf-8');
+    const stats = fs.statSync(rutaCompleta);
+
+    if (!store.config_respaldos) {
+      store.config_respaldos = {
+        rutaPersonalizada: rutaLimpia,
+        respaldoAutomaticoDiario: true,
+        respaldoProgramadoActivo: true,
+        horaRespaldo: '22:00',
+        historialRespaldos: []
+      };
+    }
+    if (!Array.isArray(store.config_respaldos.historialRespaldos)) {
+      store.config_respaldos.historialRespaldos = [];
+    }
+
+    store.config_respaldos.rutaPersonalizada = rutaLimpia;
+    store.config_respaldos.ultimoRespaldoRuta = formatDateTime(ahora);
+    store.config_respaldos.ultimoArchivoGenerado = rutaCompleta;
+    if (esAutomatico) {
+      store.config_respaldos.ultimoRespaldoDiarioFecha = formatDate(ahora);
+    }
+
+    store.config_respaldos.historialRespaldos.unshift({
+      id: Date.now(),
+      nombreArchivo,
+      rutaCompleta,
+      fecha: formatDateTime(ahora),
+      tamanoKb: (stats.size / 1024).toFixed(1),
+      tipo: tipoFinal,
+      socios: (store.clients || []).length,
+      ventas: (store.global_sales || []).length
+    });
+
+    if (store.config_respaldos.historialRespaldos.length > 30) {
+      store.config_respaldos.historialRespaldos = store.config_respaldos.historialRespaldos.slice(0, 30);
+    }
+
+    // Persistir estado en base local sin disparar bucle
+    try {
+      fs.writeFileSync(RUTA_BD_LOCAL, JSON.stringify(store, null, 2), 'utf-8');
+    } catch (_) {}
+
+    return {
+      exito: true,
+      archivo: rutaCompleta,
+      nombreArchivo,
+      tamanoKb: (stats.size / 1024).toFixed(1),
+      fecha: formatDateTime(ahora),
+      tipo: tipoFinal
+    };
+  } catch (err) {
+    console.error('[Respaldo en Ruta] Error al escribir respaldo:', err.message);
+    return {
+      exito: false,
+      error: `No se pudo guardar el archivo en '${rutaLimpia}': ${err.message}`
+    };
+  }
+}
+
+/**
+ * Comprueba si corresponde disparar el respaldo automático programado según la hora configurada.
+ * Se ejecuta periódicamente cada 30 segundos.
+ */
+export function verificarYEjecutarRespaldoProgramado() {
+  if (!store.config_respaldos) return null;
+  const cfg = store.config_respaldos;
+
+  if (!cfg.respaldoProgramadoActivo || !cfg.rutaPersonalizada || !cfg.rutaPersonalizada.trim()) {
+    return null;
+  }
+
+  const horaObjetivo = (cfg.horaRespaldo || '22:00').trim();
+  const ahora = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const horaActualStr = `${pad(ahora.getHours())}:${pad(ahora.getMinutes())}`;
+  const hoyStr = `${ahora.getFullYear()}-${pad(ahora.getMonth() + 1)}-${pad(ahora.getDate())}`;
+
+  // Si la hora coincide y no se ha ejecutado hoy en esta fecha
+  if (horaActualStr === horaObjetivo && cfg.ultimoRespaldoProgramadoFecha !== hoyStr) {
+    console.log(`[Auto-Respaldo Programado] Ejecutando respaldo automático a las ${horaObjetivo} en ${cfg.rutaPersonalizada}...`);
+    const res = realizarRespaldoEnRuta(cfg.rutaPersonalizada, true, `Automático Programado (${horaObjetivo} hrs)`);
+    if (res.exito) {
+      cfg.ultimoRespaldoProgramadoFecha = hoyStr;
+      try {
+        fs.writeFileSync(RUTA_BD_LOCAL, JSON.stringify(store, null, 2), 'utf-8');
+      } catch (_) {}
+      console.log(`[Auto-Respaldo Programado] Respaldo finalizado con éxito: ${res.nombreArchivo}`);
+    }
+    return res;
+  }
+  return null;
+}
+
+export function obtenerArchivosEnRuta(rutaDirectorio) {
+  if (!rutaDirectorio || typeof rutaDirectorio !== 'string' || !rutaDirectorio.trim()) {
+    return [];
+  }
+  try {
+    const dir = rutaDirectorio.trim();
+    if (!fs.existsSync(dir)) return [];
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    return entries
+      .filter(e => e.isFile() && e.name.startsWith('backup_gimnasio_') && e.name.endsWith('.json'))
+      .map(e => {
+        const full = path.join(dir, e.name);
+        const stats = fs.statSync(full);
+        return {
+          nombre: e.name,
+          ruta: full,
+          fecha: formatDateTime(stats.mtime),
+          tamanoKb: (stats.size / 1024).toFixed(1)
+        };
+      })
+      .sort((a, b) => b.nombre.localeCompare(a.nombre));
+  } catch (e) {
+    return [];
   }
 }
 
@@ -418,6 +598,28 @@ export function cargarBaseDatos() {
     }
   } catch (error) {
     console.warn('[BD Local] Advertencia al leer basedatos_local.json:', error.message);
+  }
+
+  // Asegurar que config_respaldos siempre exista tras cargar
+  if (!store.config_respaldos) {
+    store.config_respaldos = {
+      rutaPersonalizada: '',
+      respaldoAutomaticoDiario: true,
+      respaldoProgramadoActivo: true,
+      horaRespaldo: '22:00',
+      ultimoRespaldoRuta: null,
+      ultimoArchivoGenerado: null,
+      ultimoRespaldoDiarioFecha: null,
+      ultimoRespaldoProgramadoFecha: null,
+      historialRespaldos: []
+    };
+  } else {
+    if (typeof store.config_respaldos.respaldoProgramadoActivo === 'undefined') {
+      store.config_respaldos.respaldoProgramadoActivo = true;
+    }
+    if (!store.config_respaldos.horaRespaldo) {
+      store.config_respaldos.horaRespaldo = '22:00';
+    }
   }
 }
 

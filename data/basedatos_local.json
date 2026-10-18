@@ -10,7 +10,7 @@
       "role": "admin",
       "createdAt": "2026-10-14 23:52:59",
       "updatedAt": "2026-10-14 23:52:59",
-      "lastSignedIn": "2026-10-14 23:53:08"
+      "lastSignedIn": "2026-10-18 17:50:59"
     },
     {
       "id": 2,
@@ -323,7 +323,7 @@
   ],
   "sistema_actualizaciones": {
     "repo": "YaxkinCortez/GYM",
-    "versionActual": "v1.2.0",
+    "versionActual": "1.0.5",
     "ultimaComprobacion": "2026-10-14 23:52:59",
     "actualizacionDisponible": null,
     "comprobacionAutomatica": true,
@@ -340,5 +340,15 @@
       "estado": "instalada",
       "baseDeDatosPreservada": true
     }
-  ]
+  ],
+  "config_respaldos": {
+    "rutaPersonalizada": "",
+    "respaldoAutomaticoDiario": true,
+    "ultimoRespaldoRuta": null,
+    "ultimoArchivoGenerado": null,
+    "ultimoRespaldoDiarioFecha": "2026-10-18",
+    "historialRespaldos": [],
+    "respaldoProgramadoActivo": true,
+    "horaRespaldo": "23:15"
+  }
 }

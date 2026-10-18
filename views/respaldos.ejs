@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Respaldos - Gimnasio La Fabrica</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <title>Respaldos de Base de Datos - Gimnasio La Fábrica</title>
+    <link href="/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/css/font-awesome.min.css">
     <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
@@ -14,71 +14,331 @@
         <div class="row">
             <%- include('partials/sidebar') %>
             <main class="col-md-10 ms-sm-auto px-md-4 main-content">
-                <div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
                     <div>
-                        <h1><i class="fas fa-database me-2"></i>Respaldos y Copias de Seguridad</h1>
-                        <p class="text-muted mb-0 small">Exportación y descarga instantánea de la base de datos</p>
+                        <h1 class="h3 fw-bold mb-1">
+                            <i class="fas fa-shield-halved text-primary me-2"></i>Respaldos y Copias de Seguridad
+                        </h1>
+                        <p class="text-muted mb-0 small">
+                            Protección total contra pérdida o daño del equipo: descarga en ruta personalizada y programación automática por hora.
+                        </p>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="badge bg-primary text-white px-3 py-2 rounded-pill shadow-sm">
+                            <i class="fas fa-code-branch me-1"></i>v<%= typeof appVersion !== 'undefined' ? appVersion : '1.0.5' %>
+                        </span>
+                        <span class="badge bg-success-subtle text-success border border-success-subtle px-3 py-2 rounded-pill">
+                            <i class="fas fa-check-circle me-1"></i> Base de Datos Operativa
+                        </span>
                     </div>
                 </div>
 
                 <% if (mensaje) { %>
-                    <div class="alert alert-success alert-dismissible fade show">
-                        <%= mensaje %>
+                    <div class="alert alert-<%= (typeof msg_type !== 'undefined' && msg_type === 'danger') ? 'danger' : ((typeof msg_type !== 'undefined' && msg_type === 'info') ? 'info' : 'success') %> alert-dismissible fade show shadow-sm" role="alert">
+                        <div class="d-flex align-items-center">
+                            <i class="fas fa-<%= (typeof msg_type !== 'undefined' && msg_type === 'danger') ? 'triangle-exclamation' : ((typeof msg_type !== 'undefined' && msg_type === 'info') ? 'circle-info' : 'circle-check') %> fs-5 me-2"></i>
+                            <div><%= mensaje %></div>
+                        </div>
                         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                     </div>
                 <% } %>
 
-                <div class="row g-4">
-                    <div class="col-md-6">
-                        <div class="card shadow-sm h-100">
-                            <div class="card-header bg-primary text-white fw-bold">
-                                <i class="fas fa-download me-2"></i>Generar Respaldo Inmediato
+                <!-- Banner Informativo de Protección contra Pérdida de Equipo -->
+                <div class="card border-0 shadow-sm mb-4" style="background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%); color: white; border-radius: 14px;">
+                    <div class="card-body p-4">
+                        <div class="row align-items-center">
+                            <div class="col-lg-8">
+                                <div class="d-flex align-items-center gap-2 mb-2">
+                                    <span class="badge bg-warning text-dark fw-bold px-3 py-1 rounded-pill">
+                                        <i class="fas fa-shield-virus me-1"></i> Cero Pérdida de Producción
+                                    </span>
+                                    <span class="text-light small">
+                                        <i class="fas fa-clock text-warning me-1"></i>
+                                        Hora programada actual: <strong><%= (typeof horaRespaldo !== 'undefined' && horaRespaldo) ? horaRespaldo : '22:00' %> hrs</strong>
+                                    </span>
+                                </div>
+                                <h4 class="fw-bold mb-2">Descarga y respaldo automático en tu memoria USB o disco externo</h4>
+                                <p class="mb-0 text-light opacity-90 small" style="line-height: 1.6;">
+                                    Asigna una carpeta en tu memoria <strong>USB</strong> (ej: <code>E:\Respaldos_Gimnasio</code>) o disco duro externo. El sistema guardará automáticamente una copia íntegra de la base de datos <strong>todos los días a la hora que especifiques</strong>, asegurando que si la computadora se llega a perder o dañar, no se pierda más que un día de trabajo.
+                                </p>
                             </div>
-                            <div class="card-body">
-                                <p class="text-muted">Descarga una copia completa de la base de datos y catálogo de datos en formato JSON para resguardo seguro.</p>
-                                <form method="POST" action="/pages/respaldos.php" class="mb-3">
-                                    <input type="hidden" name="accion" value="descargar_json">
-                                    <button type="submit" class="btn btn-outline-primary w-100 py-2 fw-bold">
-                                        <i class="fas fa-file-download me-1"></i> Descargar Datos en JSON
-                                    </button>
-                                </form>
+                            <div class="col-lg-4 text-lg-end mt-3 mt-lg-0">
+                                <div class="p-3 bg-white bg-opacity-10 rounded-3 border border-white border-opacity-25 text-start">
+                                    <div class="text-warning small fw-bold mb-1">
+                                        <i class="fas fa-robot me-1"></i> Estado del Auto-Respaldo:
+                                    </div>
+                                    <div class="h6 mb-1 text-white fw-bold">
+                                        <%= (typeof respaldoProgramado === 'undefined' || respaldoProgramado) ? 'Activo todos los días' : 'Inactivo (requiere activación)' %>
+                                    </div>
+                                    <div class="small text-light opacity-75">
+                                        A las <%= (typeof horaRespaldo !== 'undefined' && horaRespaldo) ? horaRespaldo : '22:00' %> hrs en la ruta asignada
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
-                                <form method="POST" action="/pages/respaldos.php">
-                                    <input type="hidden" name="accion" value="descargar_zip">
-                                    <button type="submit" class="btn btn-success w-100 py-2 fw-bold shadow-sm">
-                                        <i class="fas fa-file-zipper me-1"></i> Descargar Proyecto Completo (.zip)
-                                    </button>
+                <div class="row g-4">
+                    <!-- Tarjeta 1: Configurar Ruta Personalizada y Hora Específica -->
+                    <div class="col-lg-7">
+                        <div class="card shadow-sm border-0 h-100" style="border-radius: 14px;">
+                            <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
+                                <h5 class="fw-bold mb-0 text-dark">
+                                    <i class="fas fa-folder-gear text-primary me-2"></i>Ruta Asignada y Programación Horaria
+                                </h5>
+                                <span class="badge bg-primary-subtle text-primary border">Paso Fundamental</span>
+                            </div>
+                            <div class="card-body p-4">
+                                <form method="POST" action="/pages/respaldos.php" id="formRutaRespaldo">
+                                    <!-- Campo 1: Ruta específica del usuario -->
+                                    <div class="mb-3">
+                                        <label for="inputRutaPersonalizada" class="form-label fw-bold text-dark">
+                                            <i class="fas fa-hard-drive text-primary me-1"></i> 1. Ruta Específica en Disco o Memoria USB:
+                                        </label>
+                                        <div class="input-group input-group-lg shadow-sm">
+                                            <span class="input-group-text bg-light text-primary border-end-0">
+                                                <i class="fas fa-folder-open"></i>
+                                            </span>
+                                            <input type="text" class="form-control border-start-0 ps-0" id="inputRutaPersonalizada" name="ruta_personalizada" 
+                                                   value="<%= (typeof rutaPersonalizada !== 'undefined' && rutaPersonalizada) ? rutaPersonalizada : '' %>" 
+                                                   placeholder="Ejemplo: E:\USB_Gimnasio o D:\Respaldos_LaFabrica" 
+                                                   required autocomplete="off">
+                                        </div>
+                                        <div class="form-text small mt-2 text-muted">
+                                            <i class="fas fa-info-circle text-primary me-1"></i>
+                                            Puedes colocar una ruta de memoria USB, disco duro externo o carpeta de Google Drive / Dropbox. Si la carpeta no existe, el sistema la creará automáticamente.
+                                        </div>
+                                    </div>
+
+                                    <!-- Sugerencias rápidas de rutas -->
+                                    <div class="mb-4">
+                                        <span class="small text-muted me-2 fw-semibold">Rutas frecuentes:</span>
+                                        <div class="d-inline-flex flex-wrap gap-1 mt-1">
+                                            <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" onclick="setRuta('E:\\USB_Gimnasio')">E:\USB_Gimnasio</button>
+                                            <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" onclick="setRuta('D:\\Respaldos_Gimnasio')">D:\Respaldos_Gimnasio</button>
+                                            <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" onclick="setRuta('C:\\Gimnasio_Respaldos')">C:\Gimnasio_Respaldos</button>
+                                        </div>
+                                    </div>
+
+                                    <!-- Campo 2: Hora específica para el auto-respaldo diario -->
+                                    <div class="p-3 bg-light rounded-3 mb-4 border border-primary-subtle">
+                                        <div class="row align-items-center g-3">
+                                            <div class="col-md-7">
+                                                <label for="inputHoraRespaldo" class="form-label fw-bold text-dark mb-1">
+                                                    <i class="fas fa-clock text-primary me-1"></i> 2. Hora Específica del Respaldo Automático:
+                                                </label>
+                                                <div class="text-muted small">
+                                                    Hora del día en que el sistema descargará la copia automáticamente a la ruta asignada.
+                                                </div>
+                                            </div>
+                                            <div class="col-md-5">
+                                                <div class="input-group input-group-lg shadow-sm">
+                                                    <span class="input-group-text bg-white text-primary"><i class="fas fa-bell"></i></span>
+                                                    <input type="time" class="form-control fw-bold text-primary" id="inputHoraRespaldo" name="hora_respaldo" 
+                                                           value="<%= (typeof horaRespaldo !== 'undefined' && horaRespaldo) ? horaRespaldo : '22:00' %>" required>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <hr class="my-3 text-muted">
+
+                                        <!-- Switch de activación del respaldo programado por hora -->
+                                        <div class="form-check form-switch ps-0 d-flex align-items-center justify-content-between mb-2">
+                                            <label class="form-check-label pe-3" for="checkProgramado">
+                                                <strong class="text-dark d-block">Activar Respaldo Automático Programado a la Hora Asignada</strong>
+                                                <span class="text-muted small">Al llegar la hora configurada (ej. cierre del gimnasio), el sistema guardará el respaldo automáticamente sin intervención humana.</span>
+                                            </label>
+                                            <input class="form-check-input ms-0 fs-4" type="checkbox" role="switch" id="checkProgramado" name="respaldo_programado" value="1" <%= (typeof respaldoProgramado === 'undefined' || respaldoProgramado) ? 'checked' : '' %>>
+                                        </div>
+
+                                        <!-- Switch de auto-respaldo diario en guardado -->
+                                        <div class="form-check form-switch ps-0 d-flex align-items-center justify-content-between mt-3 pt-2 border-top">
+                                            <label class="form-check-label pe-3" for="checkAuto">
+                                                <strong class="text-dark d-block">Activar Respaldo Preventivo en Operaciones Críticas</strong>
+                                                <span class="text-muted small">Garantiza al menos un respaldo diario en la primera venta o cobro del día sobre la ruta asignada.</span>
+                                            </label>
+                                            <input class="form-check-input ms-0 fs-4" type="checkbox" role="switch" id="checkAuto" name="respaldo_automatico" value="1" <%= (typeof respaldoAutomatico === 'undefined' || respaldoAutomatico) ? 'checked' : '' %>>
+                                        </div>
+                                    </div>
+
+                                    <!-- Botones de Acción -->
+                                    <div class="d-flex flex-wrap gap-2 pt-1">
+                                        <button type="submit" name="accion" value="guardar_config_ruta" class="btn btn-primary fw-bold px-4 py-2 shadow-sm flex-grow-1">
+                                            <i class="fas fa-floppy-disk me-1"></i> Guardar Ruta y Hora Programada
+                                        </button>
+                                        <button type="submit" name="accion" value="respaldar_en_ruta" class="btn btn-success fw-bold px-4 py-2 shadow-sm flex-grow-1">
+                                            <i class="fas fa-download me-1"></i> Descargar / Respaldar Ahora en Esta Ruta
+                                        </button>
+                                        <button type="submit" name="accion" value="probar_respaldo_programado" class="btn btn-outline-secondary fw-bold px-3 py-2 flex-grow-1" title="Prueba el ciclo automático programado inmediatamente">
+                                            <i class="fas fa-vial me-1"></i> Probar Respaldo Programado
+                                        </button>
+                                    </div>
                                 </form>
                             </div>
                         </div>
                     </div>
-                    <div class="col-md-6">
-                        <div class="card shadow-sm h-100">
-                            <div class="card-header bg-light fw-bold">
-                                <i class="fas fa-shield-alt me-2"></i>Estado del Almacenamiento
+
+                    <!-- Tarjeta 2: Descarga Directa al Navegador y Estado -->
+                    <div class="col-lg-5">
+                        <div class="card shadow-sm border-0 mb-4" style="border-radius: 14px;">
+                            <div class="card-header bg-white border-bottom py-3">
+                                <h5 class="fw-bold mb-0 text-dark">
+                                    <i class="fas fa-cloud-arrow-down text-success me-2"></i>Descarga Directa en el Navegador
+                                </h5>
                             </div>
-                            <div class="card-body">
-                                <ul class="list-group list-group-flush">
-                                    <li class="d-flex justify-content-between py-2">
-                                        <span>Motor de Base de Datos:</span>
-                                        <strong class="text-primary">En memoria + Exportable</strong>
+                            <div class="card-body p-4">
+                                <p class="text-muted small mb-3">
+                                    Descarga de forma instantánea una copia del archivo <code>.json</code> a tu carpeta personal de Descargas en este equipo.
+                                </p>
+                                <form method="POST" action="/pages/respaldos.php">
+                                    <input type="hidden" name="accion" value="descargar_json">
+                                    <button type="submit" class="btn btn-outline-success w-100 py-3 fw-bold shadow-sm d-flex align-items-center justify-content-center gap-2 mb-3">
+                                        <i class="fas fa-file-arrow-down fs-5"></i> Descargar Base de Datos (.JSON)
+                                    </button>
+                                </form>
+
+                                <div class="border-top pt-3">
+                                    <p class="text-muted small mb-2">
+                                        ¿Quieres descargar el código fuente y ejecutable <code>iniciar_gimnasio.bat</code> completo?
+                                    </p>
+                                    <a href="/descargar-proyecto-zip" class="btn btn-light border text-dark w-100 py-2 fw-bold shadow-sm d-flex align-items-center justify-content-center gap-2">
+                                        <i class="fas fa-file-zipper text-warning"></i> Descargar Proyecto Completo v<%= typeof appVersion !== 'undefined' ? appVersion : '1.0.5' %> (.ZIP)
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Estado en Vivo del Respaldo -->
+                        <div class="card shadow-sm border-0" style="border-radius: 14px;">
+                            <div class="card-header bg-white border-bottom py-3">
+                                <h5 class="fw-bold mb-0 text-dark">
+                                    <i class="fas fa-circle-info text-info me-2"></i>Resumen de Configuración Activa
+                                </h5>
+                            </div>
+                            <div class="card-body p-3">
+                                <ul class="list-group list-group-flush small">
+                                    <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
+                                        <span class="text-muted">Ruta Asignada:</span>
+                                        <span class="fw-bold text-truncate text-end ms-2" style="max-width: 220px;" title="<%= (typeof rutaPersonalizada !== 'undefined' && rutaPersonalizada) ? rutaPersonalizada : 'No configurada' %>">
+                                            <%= (typeof rutaPersonalizada !== 'undefined' && rutaPersonalizada) ? rutaPersonalizada : 'No configurada' %>
+                                        </span>
                                     </li>
-                                    <li class="d-flex justify-content-between py-2">
-                                        <span>Estado del Servicio:</span>
-                                        <span class="badge bg-success">Activo y Operativo</span>
+                                    <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
+                                        <span class="text-muted">Hora Programada:</span>
+                                        <span class="badge bg-primary fs-6 px-2 py-1">
+                                            <i class="fas fa-clock me-1"></i><%= (typeof horaRespaldo !== 'undefined' && horaRespaldo) ? horaRespaldo : '22:00' %> hrs
+                                        </span>
                                     </li>
-                                    <li class="d-flex justify-content-between py-2">
-                                        <span>Último Respaldo Generado:</span>
-                                        <span class="text-muted small"><%= fechaActual %></span>
+                                    <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
+                                        <span class="text-muted">Auto-Respaldo Programado:</span>
+                                        <span class="badge bg-<%= (typeof respaldoProgramado === 'undefined' || respaldoProgramado) ? 'success' : 'secondary' %>">
+                                            <%= (typeof respaldoProgramado === 'undefined' || respaldoProgramado) ? 'Activo Diario' : 'Desactivado' %>
+                                        </span>
+                                    </li>
+                                    <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
+                                        <span class="text-muted">Último Respaldo en Ruta:</span>
+                                        <span class="fw-bold text-dark"><%= (typeof ultimoRespaldoRuta !== 'undefined' && ultimoRespaldoRuta) ? ultimoRespaldoRuta : 'Pendiente' %></span>
+                                    </li>
+                                    <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
+                                        <span class="text-muted">Último Archivo en Disco:</span>
+                                        <span class="text-muted text-truncate ms-2" style="max-width: 200px;" title="<%= (typeof ultimoArchivoGenerado !== 'undefined' && ultimoArchivoGenerado) ? ultimoArchivoGenerado : 'Ninguno' %>">
+                                            <%= (typeof ultimoArchivoGenerado !== 'undefined' && ultimoArchivoGenerado) ? ultimoArchivoGenerado.split(/[\\/]/).pop() : 'Ninguno' %>
+                                        </span>
                                     </li>
                                 </ul>
                             </div>
                         </div>
                     </div>
                 </div>
+
+                <!-- Tarjeta 3: Historial de Respaldos Registrados en la Ruta -->
+                <div class="card shadow-sm border-0 mt-4 mb-5" style="border-radius: 14px;">
+                    <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <div>
+                            <h5 class="fw-bold mb-0 text-dark">
+                                <i class="fas fa-clock-rotate-left text-primary me-2"></i>Historial de Respaldos en Ruta Destino
+                            </h5>
+                            <span class="text-muted small">Copias generadas en la ruta asignada por el usuario (manuales y automáticas)</span>
+                        </div>
+                        <% if (typeof rutaPersonalizada !== 'undefined' && rutaPersonalizada) { %>
+                            <span class="badge bg-light text-secondary border px-3 py-2">
+                                <i class="fas fa-folder me-1 text-primary"></i><%= rutaPersonalizada %>
+                            </span>
+                        <% } %>
+                    </div>
+                    <div class="card-body p-0">
+                        <% if (typeof historial !== 'undefined' && historial && historial.length > 0) { %>
+                            <div class="table-responsive">
+                                <table class="table table-hover align-middle mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th class="ps-4">Archivo de Respaldo</th>
+                                            <th>Fecha y Hora</th>
+                                            <th>Modalidad</th>
+                                            <th>Socios</th>
+                                            <th>Ventas</th>
+                                            <th>Tamaño</th>
+                                            <th class="text-end pe-4">Estado</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <% historial.forEach(function(item) { %>
+                                            <tr>
+                                                <td class="ps-4 fw-bold text-dark">
+                                                    <i class="fas fa-file-code text-primary me-2"></i><%= item.nombreArchivo %>
+                                                </td>
+                                                <td class="text-muted small"><%= item.fecha %></td>
+                                                <td>
+                                                    <% if (item.tipo && item.tipo.includes('Programado')) { %>
+                                                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle">
+                                                            <i class="fas fa-clock me-1"></i><%= item.tipo %>
+                                                        </span>
+                                                    <% } else if (item.tipo && item.tipo.includes('Automático')) { %>
+                                                        <span class="badge bg-success-subtle text-success border border-success-subtle">
+                                                            <i class="fas fa-bolt me-1"></i><%= item.tipo %>
+                                                        </span>
+                                                    <% } else { %>
+                                                        <span class="badge bg-secondary-subtle text-secondary border">
+                                                            <i class="fas fa-hand me-1"></i><%= item.tipo %>
+                                                        </span>
+                                                    <% } %>
+                                                </td>
+                                                <td><span class="badge bg-light text-dark border"><%= item.socios %> socios</span></td>
+                                                <td><span class="badge bg-light text-dark border"><%= item.ventas %> ventas</span></td>
+                                                <td class="small text-muted"><%= item.tamanoKb %> KB</td>
+                                                <td class="text-end pe-4">
+                                                    <span class="badge bg-success text-white">
+                                                        <i class="fas fa-circle-check me-1"></i>Protegido
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        <% }); %>
+                                    </tbody>
+                                </table>
+                            </div>
+                        <% } else { %>
+                            <div class="text-center py-5 px-3">
+                                <div class="text-muted mb-3" style="font-size: 3rem;"><i class="fas fa-box-open"></i></div>
+                                <h6 class="fw-bold text-dark">Aún no se han guardado respaldos en una ruta específica</h6>
+                                <p class="text-muted small mb-3">Ingresa una ruta de carpeta arriba (por ejemplo tu memoria USB o disco externo) y haz clic en "Descargar / Respaldar Ahora en Esta Ruta".</p>
+                                <button type="button" class="btn btn-sm btn-primary" onclick="document.getElementById('inputRutaPersonalizada').focus();">
+                                    <i class="fas fa-folder-open me-1"></i> Asignar Ruta Ahora
+                                </button>
+                            </div>
+                        <% } %>
+                    </div>
+                </div>
+
             </main>
         </div>
     </div>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script src="/js/bootstrap.bundle.min.js"></script>
+    <script>
+        function setRuta(ruta) {
+            document.getElementById('inputRutaPersonalizada').value = ruta;
+        }
+    </script>
 </body>
 </html>

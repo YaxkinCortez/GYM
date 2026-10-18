@@ -12,8 +12,19 @@ import {
   getTodayStr,
   getNowStr,
   getDaysDiff,
-  guardarBaseDatos
+  guardarBaseDatos,
+  realizarRespaldoEnRuta,
+  obtenerArchivosEnRuta,
+  verificarYEjecutarRespaldoProgramado
 } from './data/store.js';
+import {
+  parsearVersion,
+  formatearVersion,
+  incrementarVersion,
+  compararVersiones,
+  obtenerVersionLocal,
+  guardarVersionLocal
+} from './data/versionManager.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -60,16 +71,15 @@ export function generarZipProyecto() {
 
 const esScriptPrincipal = Boolean(process.argv[1] && (process.argv[1].endsWith('server.js') || process.argv[1] === fileURLToPath(import.meta.url)));
 
-// Generación asíncrona en segundo plano para no demorar el inicio del servidor
-if (esScriptPrincipal) {
-  setTimeout(() => {
-    try {
-      generarZipProyecto();
-    } catch (err) {
-      console.warn('[ZIP] Error al generar zip diferido:', err.message);
-    }
-  }, 1000);
-}
+// Scheduler de comprobación para respaldos automáticos programados a una hora específica
+const schedulerRespaldos = setInterval(() => {
+  try {
+    verificarYEjecutarRespaldoProgramado();
+  } catch (err) {
+    console.warn('[Scheduler Respaldo] Error en ciclo de respaldo programado:', err.message);
+  }
+}, 30000);
+schedulerRespaldos.unref();
 
 const app = express();
 const PORT = parseInt(process.env.DEFAULT_APP_PORT || (process.env.PORT === '8080' ? 3000 : (process.env.PORT || 3000)), 10);
@@ -100,6 +110,9 @@ app.use((req, res, next) => {
       }
     });
   }
+  const appVersion = obtenerVersionLocal();
+  res.locals.appVersion = appVersion;
+  res.locals.configRespaldos = store.config_respaldos || null;
   res.locals.usuario = req.session.usuario || null;
   res.locals.APP_NAME = 'Gimnasio La Fábrica';
   res.locals.hoy = getTodayStr();
@@ -1296,32 +1309,123 @@ app.get(['/reportes', '/pages/reportes.php'], requireAdmin, (req, res) => {
 // RESPALDOS
 // ========================
 app.get(['/respaldos', '/pages/respaldos.php'], requireAdmin, (req, res) => {
+  const cfg = store.config_respaldos || {};
+  const rutaConfigurada = cfg.rutaPersonalizada || '';
+  const archivosEnDisco = obtenerArchivosEnRuta(rutaConfigurada);
+  const historial = cfg.historialRespaldos || [];
+
   res.render('respaldos', {
     pagina_activa: 'respaldos.php',
-    mensaje: req.query.msg || ''
+    mensaje: req.query.msg || '',
+    msg_type: req.query.msg_type || 'success',
+    rutaPersonalizada: rutaConfigurada,
+    respaldoAutomatico: cfg.respaldoAutomaticoDiario !== false,
+    respaldoProgramado: cfg.respaldoProgramadoActivo !== false,
+    horaRespaldo: cfg.horaRespaldo || '22:00',
+    ultimoRespaldoRuta: cfg.ultimoRespaldoRuta || null,
+    ultimoArchivoGenerado: cfg.ultimoArchivoGenerado || null,
+    ultimoRespaldoProgramadoFecha: cfg.ultimoRespaldoProgramadoFecha || null,
+    archivosEnDisco,
+    historial
   });
 });
 
 app.post(['/respaldos', '/pages/respaldos.php'], requireAdmin, (req, res) => {
   const accion = req.body.accion || '';
+
   if (accion === 'descargar_json') {
-    const backupData = JSON.stringify(store, null, 2);
+    const ahora = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const stamp = `${ahora.getFullYear()}-${pad(ahora.getMonth() + 1)}-${pad(ahora.getDate())}`;
+    const backupData = JSON.stringify({
+      sistema: 'Gimnasio La Fábrica',
+      version: '1.0.4',
+      fechaRespaldo: getNowStr(),
+      resumen: {
+        socios: (store.clients || []).length,
+        productos: (store.products || []).length,
+        ventas: (store.global_sales || []).length,
+        pagos: (store.member_payments || []).length
+      },
+      baseDeDatos: store
+    }, null, 2);
     res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Content-Disposition', `attachment; filename="backup_gimnasio_${getTodayStr()}.json"`);
+    res.setHeader('Content-Disposition', `attachment; filename="backup_gimnasio_${stamp}.json"`);
     return res.send(backupData);
   }
 
-  if (accion === 'descargar_zip') {
-    const zipPath = generarZipProyecto() || path.join(__dirname, 'Gimnasio_La_Fabrica_Completo.zip');
-    return res.download(zipPath, 'Gimnasio_La_Fabrica_Completo.zip');
+  if (accion === 'guardar_config_ruta') {
+    const ruta = (req.body.ruta_personalizada || '').trim();
+    const autoDiario = req.body.respaldo_automatico === '1' || req.body.respaldo_automatico === 'on';
+    const autoProgramado = req.body.respaldo_programado === '1' || req.body.respaldo_programado === 'on';
+    const hora = (req.body.hora_respaldo || '22:00').trim();
+
+    if (!store.config_respaldos) {
+      store.config_respaldos = {
+        rutaPersonalizada: '',
+        respaldoAutomaticoDiario: true,
+        respaldoProgramadoActivo: true,
+        horaRespaldo: '22:00',
+        historialRespaldos: []
+      };
+    }
+    store.config_respaldos.rutaPersonalizada = ruta;
+    store.config_respaldos.respaldoAutomaticoDiario = autoDiario;
+    store.config_respaldos.respaldoProgramadoActivo = autoProgramado;
+    store.config_respaldos.horaRespaldo = hora;
+    guardarBaseDatos();
+
+    return res.redirect('/pages/respaldos.php?msg=' + encodeURIComponent(`Configuración guardada con éxito. Respaldo programado diario a las ${hora} hrs en: ${ruta || '(sin ruta asignada)'}`) + '&msg_type=success');
+  }
+
+  if (accion === 'respaldar_en_ruta') {
+    const ruta = (req.body.ruta_personalizada || (store.config_respaldos && store.config_respaldos.rutaPersonalizada) || '').trim();
+    if (!ruta) {
+      return res.redirect('/pages/respaldos.php?msg=' + encodeURIComponent('Por favor ingresa o selecciona una ruta de carpeta válida antes de respaldar.') + '&msg_type=danger');
+    }
+
+    const resultado = realizarRespaldoEnRuta(ruta, false, 'Manual a Ruta Específica');
+    if (resultado.exito) {
+      return res.redirect('/pages/respaldos.php?msg=' + encodeURIComponent(`✅ ¡Respaldo completado! Se guardó la copia de la DB en: ${resultado.archivo} (${resultado.tamanoKb} KB)`) + '&msg_type=success');
+    } else {
+      return res.redirect('/pages/respaldos.php?msg=' + encodeURIComponent(`❌ ${resultado.error}`) + '&msg_type=danger');
+    }
+  }
+
+  if (accion === 'probar_respaldo_programado') {
+    const ruta = (req.body.ruta_personalizada || (store.config_respaldos && store.config_respaldos.rutaPersonalizada) || '').trim();
+    const hora = (store.config_respaldos && store.config_respaldos.horaRespaldo) || '22:00';
+    if (!ruta) {
+      return res.redirect('/pages/respaldos.php?msg=' + encodeURIComponent('Por favor especifica una ruta antes de probar el respaldo.') + '&msg_type=danger');
+    }
+
+    const resultado = realizarRespaldoEnRuta(ruta, true, `Prueba de Respaldo Programado (${hora} hrs)`);
+    if (resultado.exito) {
+      return res.redirect('/pages/respaldos.php?msg=' + encodeURIComponent(`✅ ¡Prueba de respaldo programado exitosa! Archivo generado: ${resultado.archivo} (${resultado.tamanoKb} KB). El programador automático funcionará exactamente así a las ${hora} hrs cada día.`) + '&msg_type=success');
+    } else {
+      return res.redirect('/pages/respaldos.php?msg=' + encodeURIComponent(`❌ ${resultado.error}`) + '&msg_type=danger');
+    }
   }
 
   res.redirect('/pages/respaldos.php');
 });
 
 app.get(['/descargar-proyecto-zip', '/descargar-zip', '/descargar.php', '/descargar'], (req, res) => {
-  const zipPath = generarZipProyecto() || path.join(__dirname, 'Gimnasio_La_Fabrica_Completo.zip');
-  res.download(zipPath, 'Gimnasio_La_Fabrica_Completo.zip');
+  const versionActual = obtenerVersionLocal();
+  const zipPath = path.join(__dirname, 'Gimnasio_La_Fabrica_Completo.zip');
+
+  if (!fs.existsSync(zipPath)) {
+    try {
+      generarZipProyecto();
+    } catch (err) {
+      console.warn('[ZIP] Error al generar zip:', err.message);
+    }
+  }
+
+  const nombreDescarga = `Gimnasio_La_Fabrica_v${versionActual}_Completo.zip`;
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', `attachment; filename="${nombreDescarga}"`);
+  res.download(zipPath, nombreDescarga);
 });
 
 // ========================
@@ -1350,55 +1454,74 @@ async function consultarGitHub(repo) {
       'Accept': 'application/vnd.github.v3+json'
     };
 
-    // 1. Intentar obtener último release formal
-    const resRelease = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, { headers });
+    // A. Consultar version.json remoto en GitHub
+    try {
+      const resVer = await fetch(`https://raw.githubusercontent.com/${repo}/main/data/version.json`, {
+        signal: AbortSignal.timeout(2500)
+      });
+      if (resVer.ok) {
+        const vData = await resVer.json();
+        if (vData && vData.version) {
+          return {
+            tipo: 'json',
+            version: formatearVersion(parsearVersion(vData.version)),
+            descripcion: vData.descripcion || 'Actualización publicada en GitHub.',
+            fecha: vData.fechaActualizacion || getNowStr(),
+            url: `https://github.com/${repo}`
+          };
+        }
+      }
+    } catch (_) {}
+
+    // B. Intentar obtener último release formal
+    const resRelease = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
+      headers,
+      signal: AbortSignal.timeout(2500)
+    });
     if (resRelease.ok) {
       const data = await resRelease.json();
       return {
         tipo: 'release',
-        version: data.tag_name || data.name,
+        version: formatearVersion(parsearVersion(data.tag_name || data.name)),
         descripcion: data.body || 'Nueva versión publicada en GitHub.',
         fecha: data.published_at || getNowStr(),
         url: data.html_url
       };
     }
 
-    // 2. Si no hay release formal, consultar últimos commits
-    const resCommits = await fetch(`https://api.github.com/repos/${repo}/commits?per_page=1`, { headers });
+    // C. Si no hay release formal, consultar últimos commits
+    const resCommits = await fetch(`https://api.github.com/repos/${repo}/commits?per_page=1`, {
+      headers,
+      signal: AbortSignal.timeout(2500)
+    });
     if (resCommits.ok) {
       const commits = await resCommits.json();
       if (Array.isArray(commits) && commits.length > 0) {
         const latest = commits[0];
-        const shaShort = (latest.sha || '').substring(0, 7);
         const commitMsg = latest.commit && latest.commit.message ? latest.commit.message.split('\n')[0] : 'Actualización de repositorio';
-        return {
-          tipo: 'commit',
-          version: `build-${shaShort}`,
-          descripcion: `Último cambio en GitHub: "${commitMsg}"`,
-          fecha: latest.commit?.committer?.date || getNowStr(),
-          url: latest.html_url
-        };
+        const matchVer = commitMsg.match(/(\d+\.\d+(?:\.\d+)?)/);
+        if (matchVer) {
+          return {
+            tipo: 'commit',
+            version: formatearVersion(parsearVersion(matchVer[1])),
+            descripcion: `Último cambio en GitHub: "${commitMsg}"`,
+            fecha: latest.commit?.committer?.date || getNowStr(),
+            url: latest.html_url
+          };
+        }
       }
     }
 
     return null;
   } catch (error) {
-    console.warn('[Actualizador] Error al conectar con GitHub:', error.message);
-    return null;
+    console.warn('[Actualizador] Sin conexión a GitHub o sin acceso a Internet:', error.message);
+    return { offline: true, error: error.message };
   }
 }
 
 app.get(['/actualizaciones', '/pages/actualizaciones.php'], requireAdmin, (req, res) => {
   const updater = store.sistema_actualizaciones;
-  const versionFile = path.join(__dirname, 'data', 'version.json');
-  if (fs.existsSync(versionFile)) {
-    try {
-      const vData = JSON.parse(fs.readFileSync(versionFile, 'utf-8'));
-      if (vData && vData.version) {
-        updater.versionActual = vData.version;
-      }
-    } catch (_) {}
-  }
+  updater.versionActual = obtenerVersionLocal();
   const flagPath = path.join(__dirname, 'data', 'simular_actualizacion.flag');
   const banderaBatActiva = fs.existsSync(flagPath);
 
@@ -1424,6 +1547,8 @@ app.post(['/actualizaciones', '/pages/actualizaciones.php'], requireAdmin, async
   const accion = req.body.accion || '';
   const now = getNowStr();
   const updater = store.sistema_actualizaciones;
+  const versionLocal = obtenerVersionLocal();
+  updater.versionActual = versionLocal;
 
   if (accion === 'cerrar_alerta') {
     updater.alertaNotificacion = null;
@@ -1434,55 +1559,73 @@ app.post(['/actualizaciones', '/pages/actualizaciones.php'], requireAdmin, async
     updater.ultimaComprobacion = now;
     const resultado = await consultarGitHub(updater.repo);
 
-    if (resultado && resultado.version && resultado.version !== updater.versionActual) {
-      updater.actualizacionDisponible = {
-        version: resultado.version,
-        descripcion: resultado.descripcion,
-        fecha: resultado.fecha,
-        url: resultado.url
-      };
-      updater.alertaNotificacion = {
-        tipo: 'info',
-        titulo: 'Actualización Disponible',
-        mensaje: `Se ha detectado una nueva versión en GitHub (${resultado.version}). Puedes instalarla manteniendo todos tus datos seguros.`
-      };
+    if (resultado && resultado.offline) {
       return res.redirect(
         '/pages/actualizaciones.php?msg=' +
-          encodeURIComponent(`🔔 ¡Nueva versión detectada en GitHub: ${resultado.version}!`) +
-          '&msg_type=warning'
+          encodeURIComponent('ℹ️ Modo sin conexión: No se detectó acceso a Internet en este momento. La comprobación se ha saltado y puedes seguir utilizando todo el software con normalidad.') +
+          '&msg_type=info'
       );
+    }
+
+    if (resultado && resultado.version) {
+      const diff = compararVersiones(resultado.version, versionLocal);
+      if (diff > 0) {
+        // La versión remota es ESTRICTAMENTE MAYOR
+        updater.actualizacionDisponible = {
+          version: resultado.version,
+          descripcion: resultado.descripcion,
+          fecha: resultado.fecha,
+          url: resultado.url
+        };
+        updater.alertaNotificacion = {
+          tipo: 'info',
+          titulo: 'Actualización Disponible',
+          mensaje: `Se ha detectado una nueva versión en GitHub (${resultado.version}). Puedes instalarla manteniendo todos tus datos seguros.`
+        };
+        return res.redirect(
+          '/pages/actualizaciones.php?msg=' +
+            encodeURIComponent(`🔔 ¡Nueva versión detectada en GitHub: ${resultado.version}!`) +
+            '&msg_type=warning'
+        );
+      } else {
+        // La versión local es mayor o igual. No descargar para no retroceder
+        updater.actualizacionDisponible = null;
+        const msgTexto = diff < 0
+          ? `🛡️ Protección anti-retrocesos activa: Tu versión local (${versionLocal}) es superior a la de GitHub (${resultado.version}). No se requiere ninguna descarga para evitar un retroceso.`
+          : `✅ Tu sistema está al día con la última versión (${versionLocal}).`;
+        return res.redirect(
+          '/pages/actualizaciones.php?msg=' + encodeURIComponent(msgTexto) + '&msg_type=success'
+        );
+      }
     } else {
       updater.actualizacionDisponible = null;
       return res.redirect(
         '/pages/actualizaciones.php?msg=' +
-          encodeURIComponent(`✅ Tu sistema está al día con el repositorio GitHub (${updater.repo}). Versión actual: ${updater.versionActual}.`) +
+          encodeURIComponent(`✅ Tu sistema cuenta con la versión más reciente (${versionLocal}).`) +
           '&msg_type=success'
       );
     }
   }
 
   if (accion === 'simular_nueva_version') {
-    // Generar siguiente versión incremental para demostración
-    const partes = updater.versionActual.replace('v', '').split('.');
-    const mayor = partes[0] || '1';
-    const menor = parseInt(partes[1] || '2', 10) + 1;
-    const nuevaVer = `v${mayor}.${menor}.0`;
+    // Generar siguiente versión según regla personalizada: 1.0.2 -> 1.0.3, 1.1.9 -> 1.2.0, 1.9.9 -> 2.0.0
+    const nuevaVer = incrementarVersion(versionLocal);
 
     updater.ultimaComprobacion = now;
     updater.actualizacionDisponible = {
       version: nuevaVer,
-      descripcion: 'Actualización de mejoras en velocidad de búsqueda de socios, estabilidad de respaldos y optimización de punto de venta.',
+      descripcion: 'Actualización incremental calculada: ' + nuevaVer,
       fecha: now,
       url: `https://github.com/${updater.repo}`
     };
     updater.alertaNotificacion = {
       tipo: 'info',
       titulo: 'Nueva Versión Detectada',
-      mensaje: `Nueva versión ${nuevaVer} lista para descargar e instalar automáticamente desde GitHub.`
+      mensaje: `Nueva versión ${nuevaVer} lista para comprobar el ciclo de actualización.`
     };
     return res.redirect(
       '/pages/actualizaciones.php?msg=' +
-        encodeURIComponent(`🔔 Nueva versión simulada (${nuevaVer}) disponible para descarga e instalación segura.`) +
+        encodeURIComponent(`Simulación incremental activada: se ha detectado la versión ${nuevaVer}.`) +
         '&msg_type=warning'
     );
   }
