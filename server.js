@@ -1691,6 +1691,21 @@ app.post(['/actualizaciones', '/pages/actualizaciones.php'], requireAdmin, async
     updater.versionActual = actualizacion.version;
     updater.actualizacionDisponible = null;
 
+    // PERSISTIR la nueva versión en data/version.json. Sin esto, la versión
+    // instalada solo vivía en la base de datos (memoria) y data/version.json
+    // seguía reportando la versión vieja, haciendo que tanto esta página como
+    // comprobar_y_actualizar.js volvieran a marcar siempre una versión
+    // superior disponible en el repositorio aunque ya estuviera instalada.
+    try {
+      guardarVersionLocal(actualizacion.version, {
+        descripcion: actualizacion.descripcion || 'Actualización instalada desde la webapp.',
+        ultimoCommitSha: actualizacion.commitSha || ''
+      });
+      updater.versionActual = obtenerVersionLocal();
+    } catch (errGuardarVer) {
+      console.warn('[Actualizador] No se pudo persistir la versión instalada:', errGuardarVer.message);
+    }
+
     store.historial_actualizaciones.push({
       id: nextId('historial_actualizaciones'),
       version: actualizacion.version,
