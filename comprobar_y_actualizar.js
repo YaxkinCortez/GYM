@@ -232,7 +232,11 @@ function descomprimirYActualizarArchivos(rutaZip) {
 
   // 2. Copiar archivos excluyendo ESTRICTAMENTE la base de datos local y respaldos
   const carpetasProtegidas = ['respaldos', 'node_modules', '.git', 'nodejs'];
-  const archivosProtegidos = ['basedatos_local.json', '.env', 'Gimnasio_La_Fabrica_Completo.zip', 'iniciar_gimnasio.bat', 'descargar_node_portable.bat'];
+  // NOTA: 'version.json' debe preservarse junto con la base de datos. Si se
+  // sobrescribiera con el version.json del repositorio, tras instalar una
+  // actualización la versión local quedaría por debajo de la remota y el
+  // sistema volvería a marcar "actualización disponible" indefinidamente.
+  const archivosProtegidos = ['basedatos_local.json', 'version.json', '.env', 'Gimnasio_La_Fabrica_Completo.zip', 'iniciar_gimnasio.bat', 'descargar_node_portable.bat'];
 
   function copiarRecursivo(srcDir, destDir) {
     const items = fs.readdirSync(srcDir);
@@ -481,12 +485,23 @@ async function comprobarYActualizar() {
 
     // Paso D: Actualizar registro de versiones
     console.log(' [PASO 4/4] Actualizando registro del sistema y empaquetando proyecto...');
-    versionInfo.version = actualizacionDisponible.version;
-    versionInfo.ultimoCommitSha = actualizacionDisponible.commitSha || versionInfo.ultimoCommitSha;
-    versionInfo.fechaActualizacion = new Date().toISOString().split('T')[0];
-    versionInfo.descripcion = actualizacionDisponible.descripcion;
-    versionInfo.estado = 'actualizado_exitoso';
-    guardarInfoVersion(versionInfo);
+    // IMPORTANTE: releer version.json desde disco, porque la instalación anterior
+    // puede haberlo sobrescrito con el version.json del repositorio. Si usáramos
+    // el objeto en memoria (obtenido al inicio), escribiríamos una versión antigua
+    // y el sistema volvería a marcar siempre una actualización disponible.
+    const versionInfoActual = obtenerInfoVersion();
+    versionInfoActual.version = formatearVersion(parsearVersion(actualizacionDisponible.version));
+    versionInfoActual.repo = versionInfoActual.repo || repo;
+    versionInfoActual.ultimoCommitSha = actualizacionDisponible.commitSha || versionInfoActual.ultimoCommitSha;
+    versionInfoActual.fechaActualizacion = new Date().toISOString().split('T')[0];
+    versionInfoActual.descripcion = actualizacionDisponible.descripcion;
+    versionInfoActual.estado = 'actualizado_exitoso';
+    guardarInfoVersion(versionInfoActual);
+    guardarVersionLocal(actualizacionDisponible.version, {
+      descripcion: actualizacionDisponible.descripcion,
+      ultimoCommitSha: actualizacionDisponible.commitSha || ''
+    });
+    console.log(` [REGISTRO] Versión local registrada ahora como: ${obtenerVersionLocal()}`);
 
     // Regenerar Gimnasio_La_Fabrica_Completo.zip tras la modificación
     regenerarZipProyecto();
