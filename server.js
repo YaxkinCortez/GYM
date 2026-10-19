@@ -121,9 +121,26 @@ if (esScriptPrincipal && fs.existsSync(RUTA_MARCADOR_REINICIO)) {
   console.log('[Auto-Reinicio] Marcador de reinicio procesado: sistema actualizado cargado correctamente.');
 }
 
+// Scheduler de comprobación para respaldos automáticos programados a una hora específica
+const schedulerRespaldos = setInterval(() => {
+  try {
+    verificarYEjecutarRespaldoProgramado();
+  } catch (err) {
+    console.warn('[Scheduler Respaldo] Error en ciclo de respaldo programado:', err.message);
+  }
+}, 30000);
+schedulerRespaldos.unref();
+
+const app = express();
+const PORT = parseInt(process.env.DEFAULT_APP_PORT || (process.env.PORT === '8080' ? 3000 : (process.env.PORT || 3000)), 10);
+
 // Si otro proceso ya está escuchando en el puerto configurado (por ejemplo,
 // el usuario volvió a ejecutar iniciar_gimnasio.bat con la app ya abierta),
 // NO abrir un segundo servidor sobre la misma base de datos: salir limpiamente.
+// IMPORTANTE: esta comprobacion debe ir DESPUES de declarar PORT; antes usaba
+// PORT antes de su inicializacion y el servidor ni siquiera arrancaba
+// (ReferenceError), lo que dejaba procesos antiguos colgados y provocaba que
+// cada lanzamiento "no terminara de cerrar" el node anterior.
 if (esScriptPrincipal) {
   const netMod = await import('net');
   const puertoLibre = await new Promise((resolverPuerto) => {
@@ -138,19 +155,6 @@ if (esScriptPrincipal) {
     process.exit(0);
   }
 }
-
-// Scheduler de comprobación para respaldos automáticos programados a una hora específica
-const schedulerRespaldos = setInterval(() => {
-  try {
-    verificarYEjecutarRespaldoProgramado();
-  } catch (err) {
-    console.warn('[Scheduler Respaldo] Error en ciclo de respaldo programado:', err.message);
-  }
-}, 30000);
-schedulerRespaldos.unref();
-
-const app = express();
-const PORT = parseInt(process.env.DEFAULT_APP_PORT || (process.env.PORT === '8080' ? 3000 : (process.env.PORT || 3000)), 10);
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
