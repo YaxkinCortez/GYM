@@ -12,9 +12,6 @@
                     <i class="fas fa-arrow-circle-up"></i> Actualización <%= updaterInfo.actualizacionDisponible.version %>
                 </a>
             <% } %>
-            <a href="/descargar-proyecto-zip" class="btn btn-sm btn-success text-white fw-bold rounded-pill px-3 shadow-sm d-inline-flex align-items-center gap-1" title="Descargar todo el proyecto comprimido en formato .ZIP">
-                <i class="fas fa-file-zipper"></i> <span class="d-none d-sm-inline">Descargar</span> .ZIP
-            </a>
             <span class="text-white small d-none d-sm-inline">
                 <i class="fas fa-user-circle me-1"></i> <%= (usuario && usuario.name) ? usuario.name : 'Usuario' %> 
                 <span class="badge bg-light text-dark ms-1"><%= (usuario && (usuario.role === 'admin' || usuario.role === 'administrador')) ? 'Administrador' : 'Cajero' %></span>

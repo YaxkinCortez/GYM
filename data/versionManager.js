@@ -13,9 +13,9 @@ export const RUTA_VERSION_JSON = path.join(__dirname, 'version.json');
  * "v1.0.1-7c54118" -> [1, 0, 1]
  */
 export function parsearVersion(vStr) {
-  if (!vStr || typeof vStr !== 'string') return [1, 0, 5];
+  if (!vStr || typeof vStr !== 'string') return null;
   const match = vStr.match(/(\d+)\.(\d+)(?:\.(\d+))?/);
-  if (!match) return [1, 0, 5];
+  if (!match) return null;
   const mayor = parseInt(match[1], 10) || 0;
   const menor = parseInt(match[2], 10) || 0;
   const parche = parseInt(match[3] || '0', 10) || 0;
@@ -36,7 +36,9 @@ export function formatearVersion(arr) {
  * - Si el primer dígito llega a 10: continúa el curso normal de los números (10.0.0, 11.0.0...)
  */
 export function incrementarVersion(vStr) {
-  let [mayor, menor, parche] = parsearVersion(vStr);
+  const arr = parsearVersion(vStr);
+  let mayor = 1, menor = 0, parche = 5;
+  if (arr) [mayor, menor, parche] = arr;
   parche += 1;
   if (parche >= 10) {
     parche = 0;
@@ -57,12 +59,28 @@ export function incrementarVersion(vStr) {
  *  < 0 si vA < vB (vA es menor)
  */
 export function compararVersiones(vA, vB) {
-  const [a1, a2, a3] = parsearVersion(vA);
-  const [b1, b2, b3] = parsearVersion(vB);
+  const arrA = parsearVersion(vA);
+  const arrB = parsearVersion(vB);
+  if (!arrA && !arrB) return 0;
+  if (!arrA) return -1; // texto sin números (ej. "build-ecd6395") se considera inferior
+  if (!arrB) return 1;
+  const [a1, a2, a3] = arrA;
+  const [b1, b2, b3] = arrB;
 
   if (a1 !== b1) return a1 - b1;
   if (a2 !== b2) return a2 - b2;
   return a3 - b3;
+}
+
+/**
+ * Clave ordenable para comparar una versión "X" contra otra "Y".
+ * Si X es estrictamente mayor que Y devuelve la propia X (para que un sort
+ * descendente coloque siempre arriba la más nueva); en cualquier otro caso
+ * devuelve Y. Así, aunque queden registros obsoletos o etiquetas sin número
+ * (ej. "build-ecd6395"), la versión instalada real gana SIEMPRE.
+ */
+export function maxVersionSegura(vX, vY) {
+  return compararVersiones(vX, vY) > 0 ? vX : vY;
 }
 
 export function obtenerVersionLocal() {
@@ -70,7 +88,12 @@ export function obtenerVersionLocal() {
     if (fs.existsSync(RUTA_VERSION_JSON)) {
       const data = JSON.parse(fs.readFileSync(RUTA_VERSION_JSON, 'utf-8'));
       if (data && data.version) {
-        return formatearVersion(parsearVersion(data.version));
+        const arr = parsearVersion(data.version);
+        // Si el archivo quedó corrompido con una etiqueta sin número
+        // (ej. "build-ecd6395"), NO devolver un default que provoque bucles
+        // de actualización: se conserva tal cual para mostrarla en pantalla.
+        if (!arr) return String(data.version).trim();
+        return formatearVersion(arr);
       }
     }
   } catch (_) {}
@@ -79,7 +102,8 @@ export function obtenerVersionLocal() {
 
 export function guardarVersionLocal(nuevaVersion, metadata = {}) {
   try {
-    const versionNormalizada = formatearVersion(parsearVersion(nuevaVersion));
+    const arr = parsearVersion(nuevaVersion);
+    const versionNormalizada = arr ? formatearVersion(arr) : String(nuevaVersion || '').trim();
     let data = {};
     if (fs.existsSync(RUTA_VERSION_JSON)) {
       try {
