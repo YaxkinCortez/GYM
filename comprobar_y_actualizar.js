@@ -33,6 +33,17 @@ import {
   obtenerVersionLocal,
   guardarVersionLocal
 } from './data/versionManager.js';
+import { generarTokenArranque } from './data/arranqueToken.js';
+
+// Cada EJECUCION del lanzador (doble clic en iniciar_gimnasio.bat) es un
+// arranque "desde cero": se emite un token de arranque nuevo que server.js
+// leera al iniciarse. Eso invalida automaticamente cualquier sesion emitida
+// por el lanzamiento anterior (el usuario debe volver a iniciar sesion).
+// El reinicio AUTOMATICO por actualizacion no pasa por aqui, asi que la
+// sesion sobrevive al auto-reinicio.
+if (!process.argv.includes('--sin-token-nuevo')) {
+  try { generarTokenArranque(); } catch (_) {}
+}
 
 // Normaliza una versión remota leída de GitHub. Si el tag/descripción no
 // contiene un número x.y.z (ej. "build-ecd6395"), se conserva el texto tal
@@ -254,6 +265,15 @@ function descomprimirYActualizarArchivos(rutaZip) {
   // actualización la versión local quedaría por debajo de la remota y el
   // sistema volvería a marcar "actualización disponible" indefinidamente.
   const archivosProtegidos = ['basedatos_local.json', 'version.json', '.env', 'Gimnasio_La_Fabrica_Completo.zip', 'iniciar_gimnasio.bat', 'descargar_node_portable.bat'];
+  // Marcadores locales que NUNCA deben sobrescribirse con los del repositorio:
+  // .token_arranque es el sello de la sesion actual (si un zip antiguo lo
+  // trajera, al volver a lanzar el .bat se reutilizaria token viejo y la
+  // sesion anterior seguiria viva; ademas rompea la invalidacion por arranque).
+  const archivosProtegidosRutaRelativa = [
+    path.join('data', 'basedatos_local.json'),
+    path.join('data', 'version.json'),
+    path.join('data', '.token_arranque')
+  ];
 
   function copiarRecursivo(srcDir, destDir) {
     const items = fs.readdirSync(srcDir);
@@ -268,14 +288,14 @@ function descomprimirYActualizarArchivos(rutaZip) {
         if (!fs.existsSync(destItem)) fs.mkdirSync(destItem, { recursive: true });
         copiarRecursivo(srcItem, destItem);
       } else {
-        // PROTEGER BASE DE DATOS LOCAL
+        // PROTEGER BASE DE DATOS LOCAL Y MARCADORES DE SESION/VERSION
         if (archivosProtegidos.includes(item)) {
           console.log(` [PROTECCIÓN] Preservando archivo local intacto: ${item}`);
           continue;
         }
         // No sobrescribir data/basedatos_local.json bajo ninguna circunstancia
-        if (destItem.endsWith(path.join('data', 'basedatos_local.json'))) {
-          console.log(' [PROTECCIÓN] Base de datos local conservada sin alteraciones.');
+        if (archivosProtegidosRutaRelativa.some(p => destItem.endsWith(p))) {
+          console.log(` [PROTECCIÓN] ${path.relative(__dirname, destItem)} conservado sin alteraciones.`);
           continue;
         }
         if (archivosReinicioServidor.has(item)) reinicioNecesario = true;

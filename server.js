@@ -95,12 +95,25 @@ function relanzarServidor(motivo = 'actualización instalada') {
   // que el nuevo tomara el puerto, el lanzador (.bat/.sh) reintentará con este
   // código de salida; nunca se acumulan más de 3 intentos.
   const reintento = parseInt(process.env.GF_REINTENTO || '0', 10) + 1;
-  const hijo = spawn(process.execPath, [__filename, ...args], {
+  // El hijo debe sobrevivir al padre. Con detached:true a secas, en Linux/macOS
+  // el proceso nuevo puede morir junto al anterior (SIGHUP), por lo que se lanza
+  // via 'setsid' fuera de la sesion del terminal. En Windows (produccion del
+  // gimnasio) no existe setsid: spawn(detached) alli si desvincula al hijo, y
+  // ademas el bucle :servidor_bucle del .bat (codigo de salida 10) es la red de
+  // seguridad que relanza el servidor aunque el hijo no llegara a vivir.
+  const opcionesHijo = {
     cwd: __dirname,
     detached: true,
     stdio: 'ignore',
-    env: { ...process.env, GF_RELANZADO: '1', GF_REINTENTO: String(reintento) }
-  });
+    // GF_TOKEN_ARRANQUE: el proceso nuevo hereda el token del actual para que
+    // el reinicio por actualizacion NO cierre la sesion del usuario. En un
+    // arranque desde cero (sin esta variable) server.js lee data/.token_arranque
+    // y habra que volver a iniciar sesion, como corresponde.
+    env: { ...process.env, GF_RELANZADO: '1', GF_REINTENTO: String(reintento), GF_TOKEN_ARRANQUE: TOKEN_ARRANQUE }
+  };
+  const hijo = process.platform === 'win32'
+    ? spawn(process.execPath, [__filename, ...args], opcionesHijo)
+    : spawn('setsid', [process.execPath, __filename, ...args], opcionesHijo);
   hijo.on('error', (errHijo) => {
     console.error('[Auto-Reinicio] No se pudo lanzar el nuevo proceso:', errHijo.message);
     reinicioEnCurso = false;
@@ -178,24 +191,33 @@ app.use(
   })
 );
 
-// Invalidacion de sesiones al reiniciar: cada arranque nuevo del servidor
-// genera un token anti-reutilizacion; las cookies emitidas por un proceso
-// anterior (por ejemplo el que quedo colgado tras cerrar la ventana) se
-// consideran invalidas y obligan a volver a iniciar sesion.
-const TOKEN_ARRANQUE = Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+// Invalidacion de sesiones al reiniciar: el token de arranque se guarda en
+// data/.token_arranque y lo comparte todo el ciclo de vida del "lanzamiento":
+//  - comprobar_y_actualizar.js escribe un token NUEVO cada vez que el usuario
+//    ejecuta iniciar_gimnasio.bat => la sesion anterior queda invalidada y hay
+//    que volver a iniciar sesion (comportamiento esperado al abrir desde cero).
+//  - El auto-reinicio por actualizacion (relanzarServidor / codigo de salida 2
+//    del .bat) NO reescribe el archivo: el proceso nuevo lee el mismo token y
+//    la sesion del usuario sobrevive al reinicio.
+// IMPORTANTE: solo se destruyen sesiones que contienen "tokenArranque"
+// (sesiones de usuario ya iniciadas). Una cookie vacia o manipulada produce
+// una sesion nueva SIN token: esa NO debe destruirse aqui, porque
+// session.destroy() impide que Express vuelva a emitir cookie de sesion y
+// se provoca un bucle infinito de redirecciones (ERR_TOO_MANY_REDIRECTS:
+// "No se puede obtener acceso a esta página").
+import { obtenerOCrearTokenArranque } from './data/arranqueToken.js';
+const TOKEN_ARRANQUE = process.env.GF_TOKEN_ARRANQUE || obtenerOCrearTokenArranque();
+
 app.use((req, res, next) => {
-  if (req.session && req.session.tokenArranque !== TOKEN_ARRANQUE) {
-    // Sesión perteneciente a un proceso anterior (o sesión recién creada sin
-    // usuario): descartarla limpiamente ANTES de continuar con el resto del
-    // pipeline. session.destroy() finaliza la respuesta, por eso se usa una
-    // sola ruta: destroy -> limpiar cookie -> redirigir segun contexto.
-    const eraSesionUsuario = !!(req.session && req.session.usuario);
+  const sesion = req.session;
+  if (sesion && sesion.tokenArranque !== undefined && sesion.tokenArranque !== TOKEN_ARRANQUE) {
+    // Sesión perteneciente a un proceso anterior: descartarla y despedirla
+    // hacia el login. Al haber un usuario detras, la siguiente visita creara
+    // una sesion nueva con su propia cookie (no hay bucle: la sesion nueva
+    // no tiene token hasta el login, y el login siempre asigna el actual).
     req.session.destroy(() => {
       try { res.clearCookie('gfsid'); } catch (_) {}
-      try {
-        if (eraSesionUsuario) return res.redirect('/login.php');
-        return res.redirect(req.originalUrl || '/');
-      } catch (_) {}
+      try { return res.redirect('/login.php'); } catch (_) {}
     });
     return;
   }
@@ -1512,24 +1534,6 @@ app.post(['/respaldos', '/pages/respaldos.php'], requireAdmin, (req, res) => {
   }
 
   res.redirect('/pages/respaldos.php');
-});
-
-app.get(['/descargar-proyecto-zip', '/descargar-zip', '/descargar.php', '/descargar'], (req, res) => {
-  const versionActual = obtenerVersionLocal();
-  const zipPath = path.join(__dirname, 'Gimnasio_La_Fabrica_Completo.zip');
-
-  if (!fs.existsSync(zipPath)) {
-    try {
-      generarZipProyecto();
-    } catch (err) {
-      console.warn('[ZIP] Error al generar zip:', err.message);
-    }
-  }
-
-  const nombreDescarga = `Gimnasio_La_Fabrica_v${versionActual}_Completo.zip`;
-  res.setHeader('Content-Type', 'application/zip');
-  res.setHeader('Content-Disposition', `attachment; filename="${nombreDescarga}"`);
-  res.download(zipPath, nombreDescarga);
 });
 
 // ========================
