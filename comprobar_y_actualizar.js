@@ -29,9 +29,18 @@ import {
   formatearVersion,
   incrementarVersion,
   compararVersiones,
+  maxVersionSegura,
   obtenerVersionLocal,
   guardarVersionLocal
 } from './data/versionManager.js';
+
+// Normaliza una versión remota leída de GitHub. Si el tag/descripción no
+// contiene un número x.y.z (ej. "build-ecd6395"), se conserva el texto tal
+// cual en lugar de corromperse con valores default.
+function normalizarVersionRemota(vStr) {
+  const arr = parsearVersion(vStr);
+  return arr ? formatearVersion(arr) : String(vStr || '').trim();
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -398,7 +407,7 @@ async function comprobarYActualizar() {
       if (respVer.statusCode === 200) {
         const vData = JSON.parse(respVer.body);
         if (vData && vData.version) {
-          versionRemota = formatearVersion(parsearVersion(vData.version));
+          versionRemota = normalizarVersionRemota(vData.version);
           descripcionRemota = vData.descripcion || descripcionRemota;
           commitShaRemoto = vData.ultimoCommitSha || '';
         }
@@ -413,7 +422,7 @@ async function comprobarYActualizar() {
           const releaseData = JSON.parse(respRelease.body);
           const tag = releaseData.tag_name || releaseData.name;
           if (tag) {
-            versionRemota = formatearVersion(parsearVersion(tag));
+            versionRemota = normalizarVersionRemota(tag);
             descripcionRemota = releaseData.body || descripcionRemota;
             urlDescargaRemota = releaseData.zipball_url || urlDescargaRemota;
             commitShaRemoto = releaseData.target_commitish || '';
@@ -433,7 +442,13 @@ async function comprobarYActualizar() {
             const msg = latest.commit?.message ? latest.commit.message.split('\n')[0] : '';
             const match = msg.match(/(\d+\.\d+(?:\.\d+)?)/);
             if (match) {
-              versionRemota = formatearVersion(parsearVersion(match[1]));
+              versionRemota = normalizarVersionRemota(match[1]);
+            } else if (/^build[-_]/i.test(msg)) {
+              // Mensaje tipo "build-ecd6395": NO es una versión instalable.
+              // Se registra solo como referencia de sincronización, sin
+              // disparar descargas ni corromper el registro de versiones.
+              versionRemota = null;
+              console.log(` [SINCRONIZACIÓN] Último commit en GitHub: "${msg}". No corresponde a una versión numérica; se omite la descarga.`);
             }
             commitShaRemoto = latest.sha;
           }

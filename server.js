@@ -121,9 +121,26 @@ if (esScriptPrincipal && fs.existsSync(RUTA_MARCADOR_REINICIO)) {
   console.log('[Auto-Reinicio] Marcador de reinicio procesado: sistema actualizado cargado correctamente.');
 }
 
+// Scheduler de comprobación para respaldos automáticos programados a una hora específica
+const schedulerRespaldos = setInterval(() => {
+  try {
+    verificarYEjecutarRespaldoProgramado();
+  } catch (err) {
+    console.warn('[Scheduler Respaldo] Error en ciclo de respaldo programado:', err.message);
+  }
+}, 30000);
+schedulerRespaldos.unref();
+
+const app = express();
+const PORT = parseInt(process.env.DEFAULT_APP_PORT || (process.env.PORT === '8080' ? 3000 : (process.env.PORT || 3000)), 10);
+
 // Si otro proceso ya está escuchando en el puerto configurado (por ejemplo,
 // el usuario volvió a ejecutar iniciar_gimnasio.bat con la app ya abierta),
 // NO abrir un segundo servidor sobre la misma base de datos: salir limpiamente.
+// IMPORTANTE: esta comprobacion debe ir DESPUES de declarar PORT; antes usaba
+// PORT antes de su inicializacion y el servidor ni siquiera arrancaba
+// (ReferenceError), lo que dejaba procesos antiguos colgados y provocaba que
+// cada lanzamiento "no terminara de cerrar" el node anterior.
 if (esScriptPrincipal) {
   const netMod = await import('net');
   const puertoLibre = await new Promise((resolverPuerto) => {
@@ -139,19 +156,6 @@ if (esScriptPrincipal) {
   }
 }
 
-// Scheduler de comprobación para respaldos automáticos programados a una hora específica
-const schedulerRespaldos = setInterval(() => {
-  try {
-    verificarYEjecutarRespaldoProgramado();
-  } catch (err) {
-    console.warn('[Scheduler Respaldo] Error en ciclo de respaldo programado:', err.message);
-  }
-}, 30000);
-schedulerRespaldos.unref();
-
-const app = express();
-const PORT = parseInt(process.env.DEFAULT_APP_PORT || (process.env.PORT === '8080' ? 3000 : (process.env.PORT || 3000)), 10);
-
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
@@ -162,12 +166,41 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 app.use(
   session({
+    name: 'gfsid',
     secret: process.env.SESSION_SECRET || 'gimnasio_la_fabrica_secret_2026',
     resave: false,
     saveUninitialized: false,
-    cookie: { maxAge: 1000 * 60 * 60 * 24 } // 24 hours
+    // Cookie de sesion sin maxAge: caduca al cerrar el navegador.
+    // Ademas, al reiniciar/relanzar el servidor la firma (secret) es la misma,
+    // pero si el usuario cerro el software y lo volvio a abrir desde cero,
+    // se espera que vuelva a iniciar sesion (no entra "ya logueado").
+    cookie: { httpOnly: true }
   })
 );
+
+// Invalidacion de sesiones al reiniciar: cada arranque nuevo del servidor
+// genera un token anti-reutilizacion; las cookies emitidas por un proceso
+// anterior (por ejemplo el que quedo colgado tras cerrar la ventana) se
+// consideran invalidas y obligan a volver a iniciar sesion.
+const TOKEN_ARRANQUE = Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+app.use((req, res, next) => {
+  if (req.session && req.session.tokenArranque !== TOKEN_ARRANQUE) {
+    // Sesión perteneciente a un proceso anterior (o sesión recién creada sin
+    // usuario): descartarla limpiamente ANTES de continuar con el resto del
+    // pipeline. session.destroy() finaliza la respuesta, por eso se usa una
+    // sola ruta: destroy -> limpiar cookie -> redirigir segun contexto.
+    const eraSesionUsuario = !!(req.session && req.session.usuario);
+    req.session.destroy(() => {
+      try { res.clearCookie('gfsid'); } catch (_) {}
+      try {
+        if (eraSesionUsuario) return res.redirect('/login.php');
+        return res.redirect(req.originalUrl || '/');
+      } catch (_) {}
+    });
+    return;
+  }
+  next();
+});
 
 // Helpers attached to res.locals y persistencia automática
 app.use((req, res, next) => {
@@ -242,6 +275,9 @@ app.post(['/login', '/login.php'], (req, res) => {
     email: user.email,
     role: user.role
   };
+  // Marca de arranque: si el servidor se relanza (actualización o cierre y
+  // reapertura del .bat), esta sesión se descarta y hay que volver a entrar.
+  req.session.tokenArranque = TOKEN_ARRANQUE;
 
   res.redirect('/pages/dashboard.php');
 });

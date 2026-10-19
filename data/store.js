@@ -355,17 +355,11 @@ export const store = {
     puntosDeRestauracion: []
   },
 
-  historial_actualizaciones: [
-    {
-      id: 1,
-      version: 'v1.2.0',
-      fecha: todayStr + ' 09:00:00',
-      descripcion: 'Versión base estabilizada con soporte autónomo y motor portable.',
-      origen: 'GitHub (YaxkinCortez/GYM)',
-      estado: 'instalada',
-      baseDeDatosPreservada: true
-    }
-  ]
+  // Historial de actualizaciones: inicia vacío. Solo se rellena con
+  // versiones REALMENTE instaladas (ver server.js / comprobar_y_actualizar.js).
+  // Antes venía con un registro inventado "v1.2.0" que corrompía la página
+  // de actualizaciones en instalaciones nuevas.
+  historial_actualizaciones: []
 };
 
 // Auto-increment sequence generator

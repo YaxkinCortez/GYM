@@ -91,20 +91,8 @@
             </button>
         </form>
 
-        <div class="border-top pt-3 mt-4 text-center">
-            <div class="mb-2 text-muted small fw-bold">
-                <i class="fas fa-download text-success me-1"></i> Descarga Local del Proyecto
-            </div>
-            <a href="/descargar-proyecto-zip" class="btn btn-success w-100 fw-bold py-2 shadow-sm d-flex align-items-center justify-content-center gap-2" id="btnDescargarZip">
-                <i class="fas fa-file-zipper fs-5"></i> Descargar Proyecto Completo v<%= typeof appVersion !== 'undefined' ? appVersion : '1.0.5' %> (.ZIP)
-            </a>
-            <div class="mt-2 text-muted" style="font-size: 0.75rem;">
-                Garantiza la última versión con base de datos, código fuente y lanzador <code>iniciar_gimnasio.bat</code>.
-            </div>
-        </div>
-
-        <div class="border-top pt-2 mt-3 text-center text-muted" style="font-size: 0.85rem;">
-            <i class="fas fa-shield-alt text-primary me-1"></i> Versión del Sistema: <strong class="text-dark bg-light px-2 py-1 rounded border">v<%= typeof appVersion !== 'undefined' ? appVersion : '1.0.5' %></strong>
+        <div class="border-top pt-3 mt-4 text-center text-muted" style="font-size: 0.85rem;">
+            <i class="fas fa-code-branch me-1"></i> Versión instalada: <strong>v<%= typeof appVersion !== 'undefined' ? appVersion : '1.0.5' %></strong>
         </div>
     </div>
 </body>
