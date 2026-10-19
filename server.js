@@ -266,6 +266,13 @@ app.use((req, res, next) => {
   }
   const appVersion = obtenerVersionLocal();
   res.locals.appVersion = appVersion;
+  // Mantener la versión de la BD SIEMPRE sincronizada con data/version.json.
+  // Evita que versiones falsas heredadas (p. ej. "v1.2.0") o registros
+  // corruptos ("build-ecd6395") sigan apareciendo en la página de
+  // actualizaciones y en el historial tras una actualización real.
+  if (store.sistema_actualizaciones && store.sistema_actualizaciones.versionActual !== appVersion) {
+    store.sistema_actualizaciones.versionActual = appVersion;
+  }
   res.locals.configRespaldos = store.config_respaldos || null;
   res.locals.usuario = req.session.usuario || null;
   res.locals.APP_NAME = 'Gimnasio La Fábrica';
@@ -1593,6 +1600,14 @@ async function consultarGitHub(repo) {
       'Accept': 'application/vnd.github.v3+json'
     };
 
+    // Normaliza una versión remota: si no contiene x.y.z devuelve null (las
+    // etiquetas tipo "build-ecd6395" NO son versiones instalables y antes
+    // provocaban descargas infinitas y registros corruptos).
+    const normVer = (vStr) => {
+      const arr = parsearVersion(vStr);
+      return arr ? formatearVersion(arr) : null;
+    };
+
     // A. Consultar version.json remoto en GitHub
     try {
       const resVer = await fetch(`https://raw.githubusercontent.com/${repo}/main/data/version.json`, {
@@ -1600,10 +1615,11 @@ async function consultarGitHub(repo) {
       });
       if (resVer.ok) {
         const vData = await resVer.json();
-        if (vData && vData.version) {
+        const vNorm = vData && vData.version ? normVer(vData.version) : null;
+        if (vNorm) {
           return {
             tipo: 'json',
-            version: formatearVersion(parsearVersion(vData.version)),
+            version: vNorm,
             descripcion: vData.descripcion || 'Actualización publicada en GitHub.',
             fecha: vData.fechaActualizacion || getNowStr(),
             url: `https://github.com/${repo}`
@@ -1613,20 +1629,25 @@ async function consultarGitHub(repo) {
     } catch (_) {}
 
     // B. Intentar obtener último release formal
-    const resRelease = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
-      headers,
-      signal: AbortSignal.timeout(2500)
-    });
-    if (resRelease.ok) {
-      const data = await resRelease.json();
-      return {
-        tipo: 'release',
-        version: formatearVersion(parsearVersion(data.tag_name || data.name)),
-        descripcion: data.body || 'Nueva versión publicada en GitHub.',
-        fecha: data.published_at || getNowStr(),
-        url: data.html_url
-      };
-    }
+    try {
+      const resRelease = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
+        headers,
+        signal: AbortSignal.timeout(2500)
+      });
+      if (resRelease.ok) {
+        const data = await resRelease.json();
+        const vNorm = normVer(data.tag_name || data.name);
+        if (vNorm) {
+          return {
+            tipo: 'release',
+            version: vNorm,
+            descripcion: data.body || 'Nueva versión publicada en GitHub.',
+            fecha: data.published_at || getNowStr(),
+            url: data.html_url
+          };
+        }
+      }
+    } catch (_) {}
 
     // C. Si no hay release formal, consultar últimos commits
     const resCommits = await fetch(`https://api.github.com/repos/${repo}/commits?per_page=1`, {
@@ -1648,6 +1669,15 @@ async function consultarGitHub(repo) {
             url: latest.html_url
           };
         }
+        // Commit sin número de versión (p. ej. "build-ecd6395"): se reporta
+        // solo como información de sincronización, SIN disparar descargas.
+        return {
+          tipo: 'sin_version',
+          version: null,
+          descripcion: `Último cambio en GitHub: "${commitMsg}" (no es una versión numérica instalable)`,
+          fecha: latest.commit?.committer?.date || getNowStr(),
+          url: latest.html_url
+        };
       }
     }
 
@@ -1736,6 +1766,15 @@ app.post(['/actualizaciones', '/pages/actualizaciones.php'], requireAdmin, async
           '/pages/actualizaciones.php?msg=' + encodeURIComponent(msgTexto) + '&msg_type=success'
         );
       }
+    } else if (resultado && resultado.tipo === 'sin_version') {
+      // El último commit de GitHub no es una versión numérica instalable
+      // (p. ej. "build-ecd6395"). NO ofrecer descarga: solo informar.
+      updater.actualizacionDisponible = null;
+      return res.redirect(
+        '/pages/actualizaciones.php?msg=' +
+          encodeURIComponent(`✅ Tu sistema está al día (${versionLocal}). ${resultado.descripcion}`) +
+          '&msg_type=success'
+      );
     } else {
       updater.actualizacionDisponible = null;
       return res.redirect(
