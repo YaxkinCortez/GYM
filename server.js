@@ -3,7 +3,7 @@ import session from 'express-session';
 import cookieParser from 'cookie-parser';
 import path from 'path';
 import fs from 'fs';
-import { execSync, spawn } from 'child_process';
+import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import AdmZip from 'adm-zip';
 import {
@@ -71,33 +71,13 @@ export function generarZipProyecto() {
 
 const esScriptPrincipal = Boolean(process.argv[1] && (process.argv[1].endsWith('server.js') || process.argv[1] === fileURLToPath(import.meta.url)));
 
-// ==================== COMPROBADOR DE ACTUALIZACIONES (RED DE SEGURIDAD) ====================
-// El lanzador oficial (iniciar_gimnasio.bat / .sh) ejecuta comprobar_y_actualizar.js
-// ANTES de arrancar la webapp. Este bloque es solo un respaldo para quien ejecute
-// "node server.js" directamente: SIEMPRE se lanza con GF_ALREADY_RAN=1 para que el
-// comprobador NO vuelva a abrir otro servidor (el auto-lanzamiento interno se
-// salta cuando esa variable esta presente). Si el comprobador instala una
-// actualizacion sale con codigo 2 y aqui terminamos con 2 para que el lanzador
-// (.bat) relance todo ya con los archivos nuevos.
-if (esScriptPrincipal && !process.env.GF_ALREADY_RAN && fs.existsSync(path.join(__dirname, 'comprobar_y_actualizar.js'))) {
-  try {
-    execSync(`"${process.execPath}" "${path.join(__dirname, 'comprobar_y_actualizar.js')}" --sin-token-nuevo`, {
-      cwd: __dirname,
-      stdio: 'inherit',
-      env: { ...process.env, GF_ALREADY_RAN: '1' }
-    });
-  } catch (errLanzador) {
-    const status = typeof errLanzador.status === 'number' ? errLanzador.status : 0;
-    if (status === 2) {
-      // Se instalo una actualizacion: salir con 2 para que el lanzador (.bat)
-      // vuelva a ejecutar server.js ya con los archivos nuevos.
-      console.log('[Actualizador] Sistema actualizado. Relanzando con la nueva version...');
-      process.exit(2);
-    }
-    // Cualquier otro codigo: sin red o fallo no fatal -> continuar con la version local.
-    console.warn('[Actualizador] Continuando con la version local (sin conexion o fallo no fatal).');
-  }
-}
+// NOTA DE ARQUITECTURA: el lanzador oficial (iniciar_gimnasio.bat) ejecuta
+// comprobar_y_actualizar.js ANTES de arrancar server.js. Si alguien lanza
+// "node server.js" directamente, el servidor se auto-relanza en segundo plano
+// mas adelante (ver bloque COMPROBADOR EN SEGUNDO PLANO) para aplicar la
+// actualizacion SIN bloquear el arranque. El arranque del servidor JAMAS debe
+// esperar a GitHub: esa era la causa del "No se puede obtener acceso a esta
+// pagina" (execSync sin timeout colgaba el proceso antes de escuchar el 3000).
 
 // ==================== AUTO-REINICIO TRAS ACTUALIZACIÓN ====================
 // Ruta del marcador que deja comprobar_y_actualizar.js cuando la instalación
@@ -160,6 +140,33 @@ function relanzarServidor(motivo = 'actualización instalada') {
 if (esScriptPrincipal && fs.existsSync(RUTA_MARCADOR_REINICIO)) {
   try { fs.unlinkSync(RUTA_MARCADOR_REINICIO); } catch (_) {}
   console.log('[Auto-Reinicio] Marcador de reinicio procesado: sistema actualizado cargado correctamente.');
+}
+
+// ==================== COMPROBADOR DE ACTUALIZACIONES (SEGUNDO PLANO) ====================
+// Cuando alguien lanza "node server.js" directamente (sin el .bat), el servidor
+// NO espera a GitHub: arranca de inmediato y el comprobador corre en segundo
+// plano. Al terminar, se relanza SOLO si hubo instalación real: codigo de salida
+// 2 (el comprobador instala SIEMPRE que deja marcador; sin él sale con 0/1).
+// Antes de este fix, el arranque hacia execSync bloqueante del comprobador sin
+// timeout: si la red o las tuberías heredadas colgaban, el puerto 3000 nunca
+// abría y el navegador mostraba "No se puede obtener acceso a esta página".
+const __comprobadorHijo = esScriptPrincipal && !process.env.GF_ALREADY_RAN
+  ? spawn(process.execPath, [path.join(__dirname, 'comprobar_y_actualizar.js'), '--sin-token-nuevo'], {
+      cwd: __dirname,
+      stdio: 'inherit',
+      env: { ...process.env, GF_ALREADY_RAN: '1' }
+    })
+  : null;
+if (__comprobadorHijo) {
+  console.log('[Actualizador] Comprobación de GitHub lanzada en segundo plano (el servidor arranca sin esperarla).');
+  __comprobadorHijo.on('exit', (codigo) => {
+    if (codigo === 2) {
+      setTimeout(() => relanzarServidor('actualización instalada en segundo plano al arrancar'), 400);
+    }
+  });
+  __comprobadorHijo.on('error', (errH) => {
+    console.warn('[Actualizador] No se pudo iniciar la comprobación en segundo plano:', errH.message);
+  });
 }
 
 // Scheduler de comprobación para respaldos automáticos programados a una hora específica
@@ -1861,8 +1868,21 @@ app.post(['/actualizaciones', '/pages/actualizaciones.php'], requireAdmin, async
       snapshot
     });
 
-    // 2. APLICAR ACTUALIZACIÓN
+    // 2. APLICAR ACTUALIZACIÓN (solo en la web local: NO hay descarga .zip)
     const versionAnterior = updater.versionActual;
+
+    // Proteccion anti-retrocesos: si por datos residuales del estado llegara
+    // una "actualizacion" con version IGUAL o INFERIOR a la instalada, no
+    // instalar nada (eso era lo que permitia el bucle de re-descargas).
+    if (compararVersiones(actualizacion.version, versionLocal) <= 0) {
+      updater.actualizacionDisponible = null;
+      return res.redirect(
+        '/pages/actualizaciones.php?msg=' +
+          encodeURIComponent(`🛡️ No se instaló nada: la versión pendiente (${actualizacion.version}) no es superior a la instalada (${versionLocal}).`) +
+          '&msg_type=info'
+      );
+    }
+
     updater.versionActual = actualizacion.version;
     updater.actualizacionDisponible = null;
 

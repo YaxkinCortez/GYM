@@ -10,7 +10,7 @@
       "role": "admin",
       "createdAt": "2026-10-14 23:52:59",
       "updatedAt": "2026-10-14 23:52:59",
-      "lastSignedIn": "2026-10-19 00:28:25"
+      "lastSignedIn": "2026-10-20 03:22:12"
     },
     {
       "id": 2,
@@ -324,7 +324,7 @@
   "sistema_actualizaciones": {
     "repo": "YaxkinCortez/GYM",
     "versionActual": "1.0.5",
-    "ultimaComprobacion": "2026-10-14 23:52:59",
+    "ultimaComprobacion": "2026-10-20 03:21:47",
     "actualizacionDisponible": null,
     "comprobacionAutomatica": true,
     "alertaNotificacion": null,
