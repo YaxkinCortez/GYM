@@ -1,0 +1,26 @@
+# ==================== MARCADORES LOCALES DE PRUEBA ====================
+# NUNCA deben versionarse: si viajan a GitHub, el ZIP de actualizacion los
+# reinstala en todos los equipos y provocan bucles infinitos de descarga /
+# invalidacion de sesiones ("No se puede obtener acceso a esta pagina").
+data/simular_actualizacion.flag
+data/reiniciar_pendiente.flag
+
+# Token de arranque: es estado LOCAL de la sesion del equipo. Debe existir en
+# el repo solo como placeholder vacio (ver data/.token_arranque); el valor real
+# lo genera cada equipo al ejecutar iniciar_gimnasio.bat.
+# (el placeholder se fuerza con ! para que no se ignore el path)
+
+# Temporales del actualizador
+temp_actualizacion.zip
+temp_actualizacion_extraido/
+cookies.txt
+
+# Respaldo local regenerable
+Gimnasio_La_Fabrica_Completo.zip
+public/Gimnasio_La_Fabrica_Completo.zip
+
+# Respaldos automaticos de la base de datos (solo locales)
+data/respaldos/*.json
+
+# Node portable descargado por el .bat (la carpeta nodejs/ del repo es aparte)
+nodejs_portable/
