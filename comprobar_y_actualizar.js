@@ -810,17 +810,59 @@ function lanzarServidorLocal() {
       // muestra "No se puede obtener acceso a esta página". Ahora: cd previo,
       // rutas SIN comillas alrededor del ejecutable/node (cmd las acepta tal
       // cual) y captura de CODIGO DE SALIDA para diagnosticar en el mismo log.
-      const cmd = [
+      // FIX DEFINITIVO (evidencia real del gimnasio: arranque.log solo con la
+      // cabecera y ventana muerta): el comando cmd se generaba EN MEMORIA con
+      // multiples comillas anidadas; en rutas con espacios/acentos (perfiles
+      // "Nombre Apellido" de Windows 11) cmd fallaba al instante y el redirect
+      // `>>` jamas escribia nada. Ahora el comando vive en un archivo .bat
+      // aparte generado por Node y TODA la salida del servidor se duplica al
+      // log desde el propio proceso Node via pipes (independiente de cmd).
+      const rutaBatLanzador = path.join(__dirname, 'data', 'lanzar_servidor.bat');
+      const lineasBat = [
+        '@echo off',
         'title Gimnasio La Fabrica - Servidor',
         `cd /d "${__dirname}"`,
-        `echo ===== [ARRANQUE VENTANA] ${new Date().toISOString()} =====`,
+        `echo ===== [VENTANA DEL SERVIDOR ABIERTA ${new Date().toISOString()}] =====`,
         `echo Node usado: ${process.execPath}`,
-        `"${process.execPath}" "${rutaServer}" >> "${rutaLog}" 2>&1`,
-        `echo ===== [SERVIDOR TERMINO codigo !EXITCODE! ver registro en ${rutaLog}] =====`,
-        `echo El servidor termino (codigo !EXITCODE!). Registro completo en data\\arranque.log`,
+        `"${process.execPath}" "${rutaServer}"`,
+        'set SERVIDOR_CODIGO=%ERRORLEVEL%',
+        'echo.',
+        `echo [SERVIDOR TERMINO con codigo %SERVIDOR_CODIGO%]. Si la app no abre, revise data\arranque.log`,
         'pause'
-      ].join(' && ');
-      spawn('cmd.exe', ['/v:on', '/c', cmd], { detached: true, stdio: 'ignore', windowsHide: false }).unref();
+      ];
+      try { fs.writeFileSync(rutaBatLanzador, lineasBat.join('\r\n') + '\r\n'); } catch (_) {}
+      let hijoVentana = null;
+      try {
+        hijoVentana = spawn('cmd.exe', ['/c', rutaBatLanzador], {
+          detached: true,
+          cwd: __dirname,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          windowsHide: false
+        });
+      } catch (_) {}
+      if (hijoVentana) {
+        // Duplicar stdout/stderr del servidor a arranque.log DESDE Node: aunque
+        // cmd falle o el redirect se rompa, el error real queda registrado.
+        const registrar = (chunk) => {
+          try { fs.appendFileSync(rutaLog, String(chunk)); } catch (_) {}
+        };
+        hijoVentana.stdout.on('data', registrar);
+        hijoVentana.stderr.on('data', registrar);
+        hijoVentana.on('error', (errH) => registrar(`[ERROR lanzando ventana del servidor] ${errH.message}\n`));
+        hijoVentana.unref();
+      } else {
+        // Ultimo recurso sin cmd: lanzar node directamente con log por pipe.
+        const hijoDirecto = spawn(process.execPath, [rutaServer], {
+          detached: true, cwd: __dirname, stdio: ['ignore', 'pipe', 'pipe']
+        });
+        const registrar2 = (chunk) => {
+          try { fs.appendFileSync(rutaLog, String(chunk)); } catch (_) {}
+        };
+        hijoDirecto.stdout.on('data', registrar2);
+        hijoDirecto.stderr.on('data', registrar2);
+        hijoDirecto.on('error', (errH) => registrar2(`[ERROR servidor directo] ${errH.message}\n`));
+        hijoDirecto.unref();
+      }
     } else {
       const logStream = fs.openSync(path.join(os.tmpdir(), 'gimnasio_server.log'), 'a');
       const hijo = spawn(process.execPath, [rutaServer], {

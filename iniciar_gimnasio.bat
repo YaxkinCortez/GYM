@@ -31,6 +31,8 @@ echo ===========================================================================
 echo                GIMNASIO LA FABRICA - SISTEMA INTEGRAL Y POS
 echo ===============================================================================
 >>"%GF_LOGFILE%" echo ===== [LANZADOR] %DATE% %TIME% =====
+set "GF_ARRANQUE=%~dp0data\arranque.log"
+>>"%GF_ARRANQUE%" echo ===== [LANZADOR .BAT INICIADO] %DATE% %TIME% =====
 
 :: 2. Deteccion robusta de Node.js (Prioriza la version portable local para funcionar 100%% sin Internet)
 set "NODE_CMD="
@@ -129,14 +131,31 @@ if not errorlevel 1 (
 
 :: Codigo 2 = se instalo una version nueva: volver a comprobar hasta quedar al dia.
 >>"%GF_LOGFILE%" echo [LANZADOR] Iniciando comprobador de actualizaciones %DATE% %TIME%
+>>"%GF_ARRANQUE%" echo [LANZADOR .BAT] Llamando al comprobador %DATE% %TIME%
 "%NODE_CMD%" "%~dp0comprobar_y_actualizar.js" --sin-token-nuevo
 if errorlevel 2 goto bucle_actualizador
 
-:: Fallback: si NO existe la carpeta nodejs\ portable dentro del proyecto (se usa
-:: el Node del sistema), lanzar el servidor desde aqui con ventana visible.
-if not defined PROYECTO_PORTABLE (
-    start "Gimnasio La Fabrica - Servidor" /MIN cmd /c ""%NODE_CMD%" "%~dp0server.js" & pause"
-)
+:: Fallback de SEGURIDAD: lanzar server.js desde AQUI con ventana visible, SIEMPRE
+:: (aunque el comprobador ya intente abrirlo). server.js verifica con HTTP real
+:: quien ocupa el puerto 3000: si hay un servidor vivo NO se duplica y sale
+:: limpio; si hay un zombie lo elimina y toma el puerto. Antes este paso estaba
+:: condicionado a que NO existiera nodejs\ portable: con portable instalado
+:: NUNCA se ejecutaba y quedabamos dependientes 100%% del lanzamiento interno del
+:: comprobador (el unico que fallaba en silencio -> "no se puede acceder").
+:: Escribir el comando del servidor en un .bat auxiliar (sin comillas anidadas fragiles).
+set "BAT_SERVIDOR=%~dp0data\servidor_ventana.bat"
+>"%BAT_SERVIDOR%" echo @echo off
+>>"%BAT_SERVIDOR%" echo title Gimnasio La Fabrica - Servidor
+>>"%BAT_SERVIDOR%" echo echo ===== [VENTANA SERVIDOR desde BAT] %DATE% %TIME% =====
+>>"%BAT_SERVIDOR%" echo "%NODE_CMD%" "%~dp0server.js" ^>^> "%GF_ARRANQUE%" 2^>^&1
+>>"%BAT_SERVIDOR%" echo set CODIGO=!ERRORLEVEL!
+>>"%BAT_SERVIDOR%" echo echo [SERVIDOR TERMINO codigo !CODIGO!] %DATE% %TIME%
+>>"%BAT_SERVIDOR%" echo echo [SERVIDOR TERMINO codigo !CODIGO!] %DATE% %TIME% ^>^> "%GF_ARRANQUE%"
+>>"%BAT_SERVIDOR%" echo echo.
+>>"%BAT_SERVIDOR%" echo echo Si la app no abrio, copie data\arranque.log y data\iniciar.log para diagnosticar.
+>>"%BAT_SERVIDOR%" echo pause
+start "Gimnasio La Fabrica - Servidor" /MIN "%COMSPEC%" /c "%BAT_SERVIDOR%"
+>>"%GF_LOGFILE%" echo [LANZADOR] Ventana del servidor lanzada desde el .bat %DATE% %TIME%
 goto lanzador_listo
 
 :bucle_actualizador
@@ -163,6 +182,7 @@ for /l %%i in (1,1,15) do (
 if defined PUERTO_VIVO (
     echo [OK] Puerto 3000 escuchando. Verificando que el servidor responda...
     >>"%GF_LOGFILE%" echo [LANZADOR] Puerto 3000 escuchando %DATE% %TIME%
+    >>"%GF_ARRANQUE%" echo [LANZADOR .BAT] Puerto 3000 escuchando %DATE% %TIME%
 ) else (
     echo [AVISO] El puerto 3000 no quedo escuchando tras 15 segundos.
     echo [AVISO] Revise data\arranque.log ^^^y data\iniciar.log para ver el error.
@@ -200,8 +220,10 @@ endlocal & exit /b 1
 :servidor_responde
 echo [OK] Servidor activo y respondiendo en http://127.0.0.1:3000
 >>"%GF_LOGFILE%" echo [LANZADOR] Servidor HTTP verificado OK %DATE% %TIME%
+>>"%GF_ARRANQUE%" echo [LANZADOR .BAT] Servidor HTTP verificado OK (responde /login.php) %DATE% %TIME%
 
 :abrir_navegador
+>>"%GF_ARRANQUE%" echo [LANZADOR .BAT] Abriendo navegador %DATE% %TIME%
 echo.
 echo [2/2] Abriendo pantalla del gimnasio...
 echo ===============================================================================
