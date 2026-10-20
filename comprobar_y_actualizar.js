@@ -784,7 +784,12 @@ function lanzarServidorLocal() {
         fs.mkdirSync(path.dirname(rutaLog), { recursive: true });
         fs.appendFileSync(rutaLog, `\r\n===== [${new Date().toISOString()}] Auto-arranque del servidor desde comprobador =====\r\n`);
       } catch (_) {}
-      const cmd = `title Gimnasio La Fabrica - Servidor && "${process.execPath}" "${rutaServer}" 2>&1 | "%SystemRoot%\\System32\\more.com" >> "${rutaLog}" & echo. & echo [El servidor termino. Registro completo en data\\arranque.log] & pause`;
+      // FIX: antes se lanzaba con `| more.com >> log`, que CONSUMIA la pantalla
+      // (la ventana del servidor no mostraba nada) y podia bloquear el pipe.
+      // Ahora: stdout+stderr del servidor van directo a data\arranque.log con
+      // append nativo de cmd, y al terminar queda una ventana visible con el
+      // mensaje final + pause para leer cualquier error sin perderlo.
+      const cmd = `title Gimnasio La Fabrica - Servidor && "${process.execPath}" "${rutaServer}" >> "${rutaLog}" 2>&1 & echo [El servidor termino. Registro completo en ${rutaLog}] & pause`;
       spawn('cmd.exe', ['/c', cmd], { detached: true, stdio: 'ignore', windowsHide: false }).unref();
     } else {
       const logStream = fs.openSync(path.join(os.tmpdir(), 'gimnasio_server.log'), 'a');
