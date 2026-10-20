@@ -3,7 +3,8 @@ import session from 'express-session';
 import cookieParser from 'cookie-parser';
 import path from 'path';
 import fs from 'fs';
-import { spawn } from 'child_process';
+import { spawn, execSync } from 'child_process';
+import http from 'http';
 import { fileURLToPath } from 'url';
 import AdmZip from 'adm-zip';
 import {
@@ -150,14 +151,21 @@ if (esScriptPrincipal && fs.existsSync(RUTA_MARCADOR_REINICIO)) {
 // Antes de este fix, el arranque hacia execSync bloqueante del comprobador sin
 // timeout: si la red o las tuberías heredadas colgaban, el puerto 3000 nunca
 // abría y el navegador mostraba "No se puede obtener acceso a esta página".
+// stdio: 'pipe' (antes 'inherit'): al lanzarse desde una ventana cmd con salida
+// redirigida a un archivo, las tuberías heredadas podían BLOQUEAR al comprobador
+// y dejar el arranque a medias. Con pipe el servidor controla la lectura y no
+// hay riesgo de deadlock por buffers del SO.
 const __comprobadorHijo = esScriptPrincipal && !process.env.GF_ALREADY_RAN
   ? spawn(process.execPath, [path.join(__dirname, 'comprobar_y_actualizar.js'), '--sin-token-nuevo'], {
       cwd: __dirname,
-      stdio: 'inherit',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
       env: { ...process.env, GF_ALREADY_RAN: '1' }
     })
   : null;
 if (__comprobadorHijo) {
+  __comprobadorHijo.stdout.on('data', (d) => process.stdout.write(String(d)));
+  __comprobadorHijo.stderr.on('data', (d) => process.stderr.write(String(d)));
   console.log('[Actualizador] Comprobación de GitHub lanzada en segundo plano (el servidor arranca sin esperarla).');
   __comprobadorHijo.on('exit', (codigo) => {
     if (codigo === 2) {
@@ -184,34 +192,43 @@ const PORT = parseInt(process.env.DEFAULT_APP_PORT || (process.env.PORT === '808
 
 // Si otro proceso ya está escuchando en el puerto configurado (por ejemplo,
 // el usuario volvió a ejecutar iniciar_gimnasio.bat con la app ya abierta),
-// NO abrir un segundo servidor sobre la misma base de datos: salir limpiamente.
-// IMPORTANTE: esta comprobacion debe ir DESPUES de declarar PORT; antes usaba
-// PORT antes de su inicializacion y el servidor ni siquiera arrancaba
-// (ReferenceError), lo que dejaba procesos antiguos colgados y provocaba que
-// cada lanzamiento "no terminara de cerrar" el node anterior.
+// NO abrir un segundo servidor sobre la misma base de datos. FIX CRITICO del
+// "No se puede obtener acceso a esta pagina": antes este bloque hacia listen()
+// de prueba y, si el puerto estaba OCUPADO, salia con process.exit(0) sin
+// verificar quien lo ocupaba. Cuando el ocupante era un ZOMBI (proceso muerto
+// o colgado que escucha pero no responde HTTP), el navegador nunca obtenia
+// respuesta y nadie limpiaba al culpable: cada lanzamiento moria igual. Ahora se
+// hace una peticion HTTP real: si hay servidor vivo -> salir sin duplicar; si
+// es zombie -> eliminarlo por PID y continuar para que ESTE proceso tome el
+// puerto (iniciarServidorConVerificacion revalida igualmente).
 if (esScriptPrincipal) {
-  const netMod = await import('net');
-  const puertoLibre = await new Promise((resolverPuerto) => {
-    const probar = netMod.default.createServer();
-    probar.once('error', () => resolverPuerto(false));
-    probar.once('listening', () => probar.close(() => resolverPuerto(true)));
-    probar.listen(PORT, '127.0.0.1');
+  const http = await import('http');
+  const estadoPuerto = await new Promise((resolverPuerto) => {
+    const req = http.default.get(`http://127.0.0.1:${PORT}/login.php`, { timeout: 2500 }, (r) => {
+      r.resume();
+      resolverPuerto('vivo');
+    });
+    req.on('timeout', () => { req.destroy(); resolverPuerto('libre_o_zombie'); });
+    req.on('error', () => resolverPuerto('libre_o_zombie'));
   });
-  if (!puertoLibre) {
-    console.log(`[Gimnasio La Fabrica] Ya existe un servidor activo en el puerto ${PORT}.`);
-    console.log('[Gimnasio La Fabrica] Este lanzador no duplicará el servidor; puedes usar la ventana ya abierta.');
-    // IMPORTANTE: si somos el hijo que lanzo comprobar_y_actualizar.js para
-    // "garantizar" el arranque, NO debemos salir con exit(0) aqui: eso dejaba
-    // una ventana de consola cerrada sin ninguna explicacion y el navegador
-    // seguia mostrando "No se puede obtener acceso a esta pagina" cuando el
-    // proceso vivo en el puerto era en realidad un zombie caido. Avisamos y
-    // dejamos que el flujo continue (la comprobacion de arriba ya limpio o
-    // reportara el estado real del puerto).
-    if (process.env.GF_SERVIDOR_LANZADO_POR_COMPROBADOR === '1') {
-      console.warn('[Gimnasio La Fabrica] AVISO: el comprobador pidio lanzar este servidor, pero el puerto ya estaba ocupado por otro proceso. Revise data\\arranque.log y data\\iniciar.log.');
-    }
+  if (estadoPuerto === 'vivo') {
+    console.log(`[Gimnasio La Fabrica] Ya existe un servidor ACTIVO Y RESPONDIENDO en el puerto ${PORT}. Esta instancia no se duplica.`);
     process.exit(0);
   }
+  // Nada sano respondiendo: intentar matar zombis que escuchen el puerto.
+  try {
+    const cpMod = await import('child_process');
+    let sal = '';
+    try {
+      sal = cpMod.execSync(`netstat -ano | findstr ":${PORT} " | findstr LISTENING`, { encoding: 'utf8', timeout: 5000 });
+    } catch (_) {}
+    const pids = [...new Set(sal.split('\n').map(l => l.trim().split(/\s+/).pop()).filter(x => /^\d+$/.test(x)))];
+    for (const pid of pids) {
+      if (String(pid) === String(process.pid)) continue;
+      console.log(`[Gimnasio La Fabrica] Puerto ${PORT} ocupado por un proceso que NO responde HTTP (zombie PID ${pid}). Terminandolo...`);
+      try { cpMod.execSync(`taskkill /F /PID ${pid}`, { stdio: 'ignore', timeout: 4000 }); } catch (_) {}
+    }
+  } catch (_) {}
 }
 
 app.set('view engine', 'ejs');
@@ -2024,44 +2041,75 @@ app.use((req, res) => {
   }
 });
 
-function iniciarServidor(puertoInicio, intentosMax = 5) {
-  const puerto = parseInt(puertoInicio, 10) || 3000;
-  const srv = app.listen(puerto, '0.0.0.0', () => {
-    console.log(`[Gimnasio La Fabrica] Servidor iniciado con éxito en http://0.0.0.0:${puerto}`);
-    console.log(`[Gimnasio La Fabrica] Acceso local disponible en: http://localhost:${puerto}`);
+// Verificacion HTTP real a una URL local (resuelve 'vivo' solo si responde).
+function probarHttp(url, timeoutMs = 2000) {
+  return new Promise((resolve) => {
+        const req = http.get(url, { timeout: timeoutMs }, (r) => { r.resume(); resolve(true); });
+    req.on('timeout', () => { req.destroy(); resolve(false); });
+    req.on('error', () => resolve(false));
   });
+}
 
-  srv.on('error', (err) => {
-    if (err.code === 'EADDRINUSE') {
-      console.warn(`[Gimnasio La Fabrica] Puerto ${puerto} en uso.`);
-      if (process.env.APPLET_ID || process.env.DEFAULT_APP_PORT) {
-        if (intentosMax > 0) {
-          console.log(`[Gimnasio La Fabrica] Reintentando en puerto ${puerto} en 1 segundo...`);
-          setTimeout(() => {
-            iniciarServidor(puerto, intentosMax - 1);
-          }, 1000);
-          return;
-        }
-      } else if (intentosMax > 0) {
-        const siguientePuerto = puerto + 1;
-        console.log(`[Gimnasio La Fabrica] Probando puerto alternativo ${siguientePuerto}...`);
-        iniciarServidor(siguientePuerto, intentosMax - 1);
-        return;
-      }
-      console.error('[Gimnasio La Fabrica] No se pudo encontrar un puerto libre disponible.');
-      process.exit(1);
-    } else {
-      console.error('[Gimnasio La Fabrica] Error en servidor:', err);
-      process.exit(1);
+async function matarZombisDelPuerto(puerto) {
+  // Un proceso puede estar ESCUCHANDO el puerto sin responder HTTP (zombie de
+  // lanzamientos anteriores o servidor viejo colgado). Ese zombie bloqueaba al
+  // nuevo servidor -> "No se puede obtener acceso a esta pagina". Se detecta y
+  // se termina antes de reintentar el mismo puerto.
+  try {
+    const sal = execSync(`netstat -ano | findstr ":${puerto} " | findstr LISTENING`, { encoding: 'utf8', timeout: 5000 });
+    const pids = [...new Set(sal.split('\n').map(l => l.trim().split(/\s+/).pop()).filter(x => /^\d+$/.test(x)))];
+    for (const pid of pids) {
+      if (String(pid) === String(process.pid)) continue;
+      console.log(`[Gimnasio La Fabrica] Terminando proceso zombi PID ${pid} que ocupa el puerto ${puerto} sin responder HTTP...`);
+      try { execSync(`taskkill /F /PID ${pid}`, { stdio: 'ignore', timeout: 4000 }); } catch (_) {}
     }
-  });
+    await new Promise(r => setTimeout(r, 700));
+  } catch (_) { /* netstat no encontro nada */ }
+}
 
-  return srv;
+async function iniciarServidorConVerificacion(puertoFijo = 3000) {
+  // FIX CRITICO "No se puede obtener acceso a esta pagina": antes, si el
+  // puerto 3000 estaba ocupado, server.js saltaba SOLO a 3001-3005, pero el
+  // .bat y el navegador apuntan SIEMPRE a 3000 -> la app quedaba inaccesible
+  // aunque "el servidor estuviera arriba" (en otro puerto). Ahora el puerto
+  // 3000 es OBLIGATORIO: si algo lo ocupa, se comprueba con HTTP real; si el
+  // ocupante es un zombie, se elimina y se reintenta; si es un servidor vivo,
+  // no se duplica nada y se sale limpio.
+  const MAX_INTENTOS = 8;
+  for (let intento = 1; intento <= MAX_INTENTOS; intento++) {
+    const vivo = await probarHttp(`http://127.0.0.1:${puertoFijo}/login.php`);
+    if (!vivo) {
+      const ok = await new Promise((resolve) => {
+        const srv = app.listen(puertoFijo, '0.0.0.0', () => {
+          console.log(`[Gimnasio La Fabrica] Servidor iniciado con éxito en http://0.0.0.0:${puertoFijo} (intento ${intento})`);
+          console.log(`[Gimnasio La Fabrica] Acceso local disponible en: http://localhost:${puertoFijo}`);
+          srv.removeAllListeners('error');
+          srv.on('error', (err) => {
+            console.error('[Gimnasio La Fabrica] Error posterior del servidor:', err.code || err.message);
+          });
+          resolve({ srv });
+        });
+        srv.once('error', (err) => { resolve({ err }); });
+      });
+      if (ok.srv) return ok.srv;
+      if (ok.err && ok.err.code !== 'EADDRINUSE') {
+        console.error('[Gimnasio La Fabrica] Error en servidor:', ok.err);
+        process.exit(1);
+      }
+      await matarZombisDelPuerto(puertoFijo);
+      continue;
+    }
+    // Hay un servidor VIVO y sano respondiendo en 3000: nunca duplicarlo.
+    console.log(`[Gimnasio La Fabrica] Ya existe un servidor activo y respondiendo en el puerto ${puertoFijo}. Esta instancia NO se duplica y finaliza.`);
+    process.exit(0);
+  }
+  console.error(`[Gimnasio La Fabrica] No se pudo tomar el puerto ${puertoFijo} tras ${MAX_INTENTOS} intentos. Revise data\arranque.log`);
+  process.exit(1);
 }
 
 let server = null;
 if (esScriptPrincipal) {
-  server = iniciarServidor(PORT);
+  iniciarServidorConVerificacion(parseInt(PORT, 10) || 3000).then((srv) => { server = srv; });
 }
-export { server, app, iniciarServidor };
+export { server, app };
 

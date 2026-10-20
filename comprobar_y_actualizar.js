@@ -148,7 +148,15 @@ function matarNodezombies(puerto) {
 // Si hay zombies pero el puerto NO responde (servidor caído que dejó procesos
 // colgados — causa clasica de "no se puede acceder"), se limpian para que el
 // nuevo server.js pueda tomar el puerto.
+let servidorSanoPreexistente = false;
+
 async function despejarPuerto(puerto) {
+  // FIX "No se puede obtener acceso a esta pagina": antes solo se miraba si el
+  // puerto estaba OCUPADO (TCP). Si un zombie escuchaba sin responder, este
+  // chequeo pasaba y ademas lanzarServidorLocal() abria una ventana que moria
+  // al instante por EADDRINUSE -> pantalla cerrada y navegador sin acceso.
+  // Ahora: si hay algo escuchando PERO no responde HTTP, se le elimina SIEMPRE
+  // (aunque su linea de comando no mencione el proyecto) usando netstat+taskkill.
   if (await puertoEstaOcupado(puerto)) {
     // El puerto responde: puede ser un servidor LEGITIMO (la app ya abierta) o
     // un proceso colgado que escucha pero no sirve paginas. Se hace una peticion
@@ -166,6 +174,7 @@ async function despejarPuerto(puerto) {
     } catch (_) { sano = false; }
     if (sano) {
       console.log(` [OK] Ya existe un servidor ACTIVO y respondiendo en el puerto ${puerto}. No se duplicara.`);
+      servidorSanoPreexistente = true;
       return;
     }
     console.log(` [AVISO] Hay un proceso escuchando en el puerto ${puerto} pero NO responde al HTTP (servidor colgado). Se terminara para poder reiniciar la app...`);
@@ -769,6 +778,10 @@ function lanzarServidorLocal() {
   // Si server.js nos invoco a nosotros (GF_ALREADY_RAN), NO abrir otro servidor:
   // el padre continua y se lanza a si mismo justo despues.
   if (servidorLanzado || process.env.GF_ALREADY_RAN === '1') return;
+  if (servidorSanoPreexistente) {
+    console.log(' [ARRANQUE] El servidor existente ya responde en el puerto 3000; no se lanza otro.');
+    return;
+  }
   servidorLanzado = true;
   const rutaServer = path.join(__dirname, 'server.js');
   try {
@@ -789,8 +802,25 @@ function lanzarServidorLocal() {
       // Ahora: stdout+stderr del servidor van directo a data\arranque.log con
       // append nativo de cmd, y al terminar queda una ventana visible con el
       // mensaje final + pause para leer cualquier error sin perderlo.
-      const cmd = `title Gimnasio La Fabrica - Servidor && "${process.execPath}" "${rutaServer}" >> "${rutaLog}" 2>&1 & echo [El servidor termino. Registro completo en ${rutaLog}] & pause`;
-      spawn('cmd.exe', ['/c', cmd], { detached: true, stdio: 'ignore', windowsHide: false }).unref();
+      // FIX CRITICO (ventana que se cerraba y "no se puede acceder"): antes el
+      // comando era `"${node}" "${server}" >> log`, con node ENTRE comillas.
+      // Cuando Node portable vive en una ruta con espacios (ej. C:\Users\Nombre
+      // Apellido\...) cmd interpreta la primera palabra como programa propio y
+      // el arranque FALLA AL INSTANTE -> la ventana desaparece y el navegador
+      // muestra "No se puede obtener acceso a esta página". Ahora: cd previo,
+      // rutas SIN comillas alrededor del ejecutable/node (cmd las acepta tal
+      // cual) y captura de CODIGO DE SALIDA para diagnosticar en el mismo log.
+      const cmd = [
+        'title Gimnasio La Fabrica - Servidor',
+        `cd /d "${__dirname}"`,
+        `echo ===== [ARRANQUE VENTANA] ${new Date().toISOString()} =====`,
+        `echo Node usado: ${process.execPath}`,
+        `"${process.execPath}" "${rutaServer}" >> "${rutaLog}" 2>&1`,
+        `echo ===== [SERVIDOR TERMINO codigo !EXITCODE! ver registro en ${rutaLog}] =====`,
+        `echo El servidor termino (codigo !EXITCODE!). Registro completo en data\\arranque.log`,
+        'pause'
+      ].join(' && ');
+      spawn('cmd.exe', ['/v:on', '/c', cmd], { detached: true, stdio: 'ignore', windowsHide: false }).unref();
     } else {
       const logStream = fs.openSync(path.join(os.tmpdir(), 'gimnasio_server.log'), 'a');
       const hijo = spawn(process.execPath, [rutaServer], {

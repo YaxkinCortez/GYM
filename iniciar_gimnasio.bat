@@ -147,16 +147,59 @@ goto lanzador_listo
 
 :lanzador_listo
 
-:: Esperar a que el puerto 3000 este escuchando (maximo 6 intentos)
-for /l %%i in (1,1,6) do (
+:: Esperar a que el puerto 3000 este ESCUCHANDO (maximo ~15s). Ojo: escuchar el
+:: puerto no significa responder; antes se abria el navegador aqui mismo y por
+:: eso salia "No se puede obtener acceso a esta pagina" cuando el proceso que
+:: ocupaba el puerto era un zombie o el servidor moria despues. Ahora la espera
+:: real de respuesta HTTP se hace aqui mismo, antes de abrir el navegador.
+set "PUERTO_VIVO="
+for /l %%i in (1,1,15) do (
     netstat -ano 2>nul | findstr /R /C:":3000 .*LISTENING" >nul 2>&1
-    if not errorlevel 1 goto servidor_listo
-    ping 127.0.0.1 -n 2 >nul 2>&1
+    if not errorlevel 1 set "PUERTO_VIVO=%%i"
+    if not defined PUERTO_VIVO ping 127.0.0.1 -n 2 >nul 2>&1
 )
 
-:servidor_listo
-echo [OK] Servidor activo en http://127.0.0.1:3000
->>"%GF_LOGFILE%" echo [LANZADOR] Servidor en puerto 3000 %DATE% %TIME%
+:puerto_escuchando
+if defined PUERTO_VIVO (
+    echo [OK] Puerto 3000 escuchando. Verificando que el servidor responda...
+    >>"%GF_LOGFILE%" echo [LANZADOR] Puerto 3000 escuchando %DATE% %TIME%
+) else (
+    echo [AVISO] El puerto 3000 no quedo escuchando tras 15 segundos.
+    echo [AVISO] Revise data\arranque.log ^^^y data\iniciar.log para ver el error.
+    >>"%GF_LOGFILE%" echo [LANZADOR] AVISO puerto 3000 NO escucha tras 15s %DATE% %TIME%
+)
+
+:: Verificacion HTTP REAL antes de abrir el navegador (max ~10s mas).
+:: Se pide /login.php con curl (incluido en Windows 10/11); si responde 2xx/3xx,
+:: recien entonces se abre la app. Si no responde, se muestra el diagnostico.
+if not defined PUERTO_VIVO goto diagnostico_final
+where curl.exe >nul 2>&1
+if errorlevel 1 goto abrir_navegador
+set "HTTP_OK="
+for /l %%i in (1,1,10) do (
+    curl.exe -s -k -o nul --max-time 3 "http://127.0.0.1:3000/login.php" && set "HTTP_OK=%%i"
+    if not defined HTTP_OK ping 127.0.0.1 -n 2 >nul 2>&1
+)
+
+:diagnostico_final
+echo.
+echo ===============================================================================
+echo [ERROR] El servidor NO respondio en http://127.0.0.1:3000
+echo.
+echo Causas posibles y solucion:
+echo   1. Abra data\arranque.log  (registro del servidor: alli esta el error real)
+echo   2. Abra data\iniciar.log   (registro del lanzador)
+echo   3. Si hay procesos Node zombis, cierrelos con: taskkill /F /IM node.exe
+echo      y vuelva a ejecutar este archivo.
+echo Copie ambos .log para reportar el fallo con evidencia exacta.
+echo ===============================================================================
+>>"%GF_LOGFILE%" echo ===== [LANZADOR] Fin CON ERROR sin respuesta HTTP %DATE% %TIME% =====
+pause
+endlocal & exit /b 1
+
+:servidor_responde
+echo [OK] Servidor activo y respondiendo en http://127.0.0.1:3000
+>>"%GF_LOGFILE%" echo [LANZADOR] Servidor HTTP verificado OK %DATE% %TIME%
 
 :abrir_navegador
 echo.
