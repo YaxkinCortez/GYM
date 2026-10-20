@@ -98,13 +98,32 @@ if not errorlevel 1 (
     goto abrir_navegador
 )
 
+:: Comprobar actualizaciones ANTES de arrancar la webapp (igual que las versiones
+:: originales de produccion). Codigo 2 = se instalo una version nueva: volver a
+:: pasar por aqui para que el token de arranque sea nuevo y la webapp cargue los
+:: archivos actualizados. Codigo 0/1 = continuar con el arranque normal.
+"%NODE_CMD%" "%~dp0comprobar_y_actualizar.js"
+if errorlevel 2 goto bucle_actualizador
+
 :: Arrancar server.js en segundo plano de manera limpia y silenciosa
 :: El bucle interno se relanza solo si el servidor se auto-reinicio tras una actualizacion (codigo 10)
 start "Gimnasio La Fabrica - Servidor" /MIN cmd /c "set "GF_REINTENTO=0" & goto :servidor_bucle"
 goto lanzador_listo
 
+:bucle_actualizador
+"%NODE_CMD%" "%~dp0comprobar_y_actualizar.js"
+if errorlevel 2 goto bucle_actualizador
+goto node_detectado
+
 :servidor_bucle
 "%NODE_CMD%" "%~dp0server.js"
+if errorlevel 2 (
+    if "%GF_REINTENTO%"=="3" exit
+    set /a GF_REINTENTO+=1
+    echo [INFO] Actualizacion instalada. Volviendo a comprobar e iniciar de nuevo...
+    ping 127.0.0.1 -n 3 >nul 2>&1
+    goto :servidor_bucle
+)
 if errorlevel 10 if not errorlevel 11 (
     if "%GF_REINTENTO%"=="3" exit
     set /a GF_REINTENTO+=1

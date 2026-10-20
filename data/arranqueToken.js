@@ -24,6 +24,14 @@ export function obtenerOCrearTokenArranque() {
 }
 
 export function generarTokenArranque() {
+  // Lanzamiento interno del comprobador de actualizaciones (server.js ->
+  // comprobar_y_actualizar.js tras una instalacion): NO se emite token nuevo
+  // aqui porque eso invalidaria la sesion a mitad del arranque y podria
+  // provocar redirecciones en bucle. El token nuevo se genera cuando el
+  // usuario ejecuta iniciar_gimnasio.bat desde cero (sin GF_CHECK_DONE).
+  if (process.env.GF_CHECK_DONE === '1') {
+    return obtenerOCrearTokenArranque();
+  }
   const token = Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
   try { fs.writeFileSync(RUTA_TOKEN, token, 'utf8'); } catch (_) {}
   return token;

@@ -347,7 +347,10 @@ export const store = {
 
   sistema_actualizaciones: {
     repo: 'YaxkinCortez/GYM',
-    versionActual: 'v1.2.0',
+    // La versión real se sincroniza desde data/version.json al arrancar el
+    // servidor. El seed ya NO inventa versiones falsas tipo "v1.2.0" que
+    // corrompían el historial de actualizaciones en instalaciones nuevas.
+    versionActual: 'desconocida',
     ultimaComprobacion: nowStr,
     actualizacionDisponible: null,
     comprobacionAutomatica: true,
