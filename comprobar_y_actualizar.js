@@ -17,11 +17,13 @@
  */
 
 import fs from 'fs';
+import os from 'os';
+import net from 'net';
 import path from 'path';
 import https from 'https';
 import http from 'http';
 import dns from 'dns';
-import { execSync } from 'child_process';
+import { execSync, spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import AdmZip from 'adm-zip';
 import {
@@ -39,10 +41,123 @@ import { generarTokenArranque } from './data/arranqueToken.js';
 // arranque "desde cero": se emite un token de arranque nuevo que server.js
 // leera al iniciarse. Eso invalida automaticamente cualquier sesion emitida
 // por el lanzamiento anterior (el usuario debe volver a iniciar sesion).
-// El reinicio AUTOMATICO por actualizacion no pasa por aqui, asi que la
-// sesion sobrevive al auto-reinicio.
-if (!process.argv.includes('--sin-token-nuevo')) {
+// El reinicio AUTOMATICO por actualizacion puede pasar por aqui cuando el
+// .bat se relanza (con GF_REINTENTO/GF_RELANZADO en el entorno): en ese caso
+// NO se emite token nuevo, para no cerrar la sesion a mitad del arranque.
+if (!process.argv.includes('--sin-token-nuevo') && process.env.GF_RELANZADO !== '1' && !process.env.GF_REINTENTO) {
   try { generarTokenArranque(); } catch (_) {}
+}
+
+// ==================== GARANTIA DE SALIDA (anti "no arranca") ====================
+// Comportamiento historico del bug: en equipos sin Node instalado o con red
+// inestable, este proceso NUNCA terminaba (quedaba esperando una descarga de
+// GitHub indefinidamente), el .bat jamas llegaba a lanzar server.js y el
+// navegador mostraba "No se puede obtener acceso a esta pagina".
+// Regla absoluta: este comprobador SIEMPRE termina solo, como maximo en 20 s.
+const LIMITE_TOTAL_MS = 20000;
+let finalizado = false;
+function terminarSiempre(codigo, motivo) {
+  if (finalizado) return;
+  finalizado = true;
+  try {
+    if (motivo) console.log(`\n [GARANTIA DE SALIDA] ${motivo}`);
+  } catch (_) {}
+  // Salida FORZADA: si quedara alguna peticion HTTP colgada, no impedira que
+  // el lanzador continue hacia server.js.
+  process.exit(codigo);
+}
+setTimeout(() => terminarSiempre(0, 'Tiempo limite global (20 s) alcanzado. Continuando con la version local instalada.'), LIMITE_TOTAL_MS);
+
+// Dependencias criticas: si faltan (p. ej. se borro node_modules o la
+// instalacion queda incompleta), avisar con mensaje claro en vez de fallar.
+try {
+  for (const dep of ['express', 'express-session', 'cookie-parser', 'ejs', 'adm-zip']) {
+    if (!fs.existsSync(path.join(__dirname, 'node_modules', dep))) {
+      console.log(` [AVISO] Falta la dependencia "${dep}". Ejecuta "npm install" en esta carpeta.`);
+    }
+  }
+} catch (_) {}
+
+// Mataprocesos huérfanos: limpiar nodos zombies que bloquean el puerto 3000.
+// Solo mata procesos cuyo comando completo menciona ESTE proyecto (server.js
+// u otro comprobar_y_actualizar.js colgado): nunca toca otros programas Node.
+async function puertoEstaOcupado(puerto) {
+  return new Promise((resolve) => {
+    const probar = net.connect({ host: '127.0.0.1', port: puerto });
+    const t = setTimeout(() => { probar.destroy(); resolve(false); }, 800);
+    probar.on('connect', () => { clearTimeout(t); probar.destroy(); resolve(true); });
+    probar.on('error', () => { clearTimeout(t); resolve(false); });
+  });
+}
+
+function matarNodezombies(puerto) {
+  let muertos = 0;
+  try {
+    if (process.platform === 'win32') {
+      // wmic devuelve lineas "ComandoLinea|PID"; PowerShell Get-CimInstance
+      // como respaldo si wmic no existe (Windows 11 lo retira).
+      let lineas = [];
+      try {
+        const out = execSync(
+          'wmic process where "name=\'node.exe\'" get ProcessId,CommandLine /format:list',
+          { encoding: 'utf8', timeout: 6000 }
+        );
+        let cmdActual = '';
+        for (const l of out.split(/\r?\n/)) {
+          if (l.startsWith('CommandLine=')) cmdActual = l.slice(12);
+          else if (l.startsWith('ProcessId=')) {
+            const pid = parseInt(l.slice(10), 10);
+            if (pid && pid !== process.pid && /server\.js|comprobar_y_actualizar/.test(cmdActual)) {
+              lineas.push(pid);
+            }
+          }
+        }
+      } catch (_) {
+        try {
+          const ps = `Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Select-Object ProcessId,CommandLine | ConvertTo-Json`;
+          const json = JSON.parse(execSync(`powershell -NoProfile -Command "${ps.replace(/"/g, '\\"')}"`, { encoding: 'utf8', timeout: 8000 }).trim() || '[]');
+          const arr = Array.isArray(json) ? json : [json];
+          for (const p of arr) {
+            if (p && p.ProcessId && p.ProcessId !== process.pid && /server\.js|comprobar_y_actualizar/.test(p.CommandLine || '')) {
+              lineas.push(p.ProcessId);
+            }
+          }
+        } catch (_) {}
+      }
+      for (const pid of lineas) {
+        try { execSync(`taskkill /F /PID ${pid}`, { stdio: 'ignore', timeout: 4000 }); muertos++; } catch (_) {}
+      }
+    } else {
+      try {
+        const out = execSync(`ps -eo pid,args`, { encoding: 'utf8', timeout: 4000 });
+        for (const linea of out.split('\n')) {
+          const m = linea.trim().match(/^(\d+)\s+(.*)$/);
+          if (!m) continue;
+          const pid = parseInt(m[1], 10);
+          if (pid !== process.pid && /node.*(server\.js|comprobar_y_actualizar)/.test(m[2])) {
+            try { process.kill(pid, 'SIGKILL'); muertos++; } catch (_) {}
+          }
+        }
+      } catch (_) {}
+    }
+  } catch (_) {}
+  return muertos;
+}
+
+// Si el puerto ya responde, hay un servidor VIVO: no se duplica ni se mata.
+// Si hay zombies pero el puerto NO responde (servidor caído que dejó procesos
+// colgados — causa clasica de "no se puede acceder"), se limpian para que el
+// nuevo server.js pueda tomar el puerto.
+async function despejarPuerto(puerto) {
+  if (await puertoEstaOcupado(puerto)) {
+    console.log(` [OK] Ya existe un servidor activo en el puerto ${puerto}. No se duplicara.`);
+    return;
+  }
+  const n = matarNodezombies(puerto);
+  if (n > 0) {
+    console.log(` [LIMPIEZA] ${n} proceso(s) Node zombi del gimnasio terminados. El puerto ${puerto} queda libre.`);
+    await new Promise(r => setTimeout(r, 600));
+  }
 }
 
 // Normaliza una versión remota leída de GitHub. Si el tag/descripción no
@@ -363,14 +478,20 @@ function regenerarZipProyecto() {
 }
 
 async function comprobarYActualizar() {
-  // Watchdog de seguridad: Máximo 3 segundos para todo el proceso.
-  // Si la red se demora o hay latencia, se libera el proceso para entrar al gimnasio sin demoras.
+  // Watchdog de seguridad: maximo 3 segundos para la comprobacion por red.
+  // (Ademas existe el limite global de 20 s "terminarSiempre": el proceso
+  // NUNCA puede quedar colgado, que era lo que impedía arrancar la app.)
   const timeoutSeguridad = setTimeout(() => {
     console.log('\n [DEGRADACIÓN ELEGANTE] Tiempo límite de comprobación alcanzado.');
     console.log(' Procediendo directamente al inicio del programa y pantalla de login...');
-    process.exit(0);
+    lanzarServidorLocal(); // no dependemos del .bat: nosotros mismos arrancamos la webapp
+    terminarSiempre(0, null);
   }, 3000);
   timeoutSeguridad.unref();
+
+  // Limpiar procesos Node zombis del proyecto que dejan el puerto 3000
+  // bloqueado SIN servidor util (causa clasica de "no se puede acceder").
+  try { await despejarPuerto(3000); } catch (_) {}
 
   const versionInfo = obtenerInfoVersion();
   const repo = process.env.REPO_GITHUB || versionInfo.repo || 'YaxkinCortez/GYM';
@@ -411,7 +532,8 @@ async function comprobarYActualizar() {
       console.log(' Saltando la comprobación de GitHub para permitir que la aplicación proceda');
       console.log(' directamente a la pantalla de inicio de sesión sin demoras ni bloqueos.');
       console.log('===============================================================================');
-      process.exit(0);
+      lanzarServidorLocal(); // sin internet TAMPOCO dependemos del .bat: la app arranca igual
+      terminarSiempre(0, null);
     }
 
     console.log(' Conectando con GitHub para verificar actualizaciones disponibles...');
@@ -500,12 +622,14 @@ async function comprobarYActualizar() {
         console.log(' No se realiza ninguna descarga para evitar dar un retroceso en el software.');
         console.log(' Procediendo directamente al inicio del programa y pantalla de login...');
         console.log('===============================================================================');
-        process.exit(0);
+        lanzarServidorLocal();
+        terminarSiempre(0, null);
       }
     } else {
       console.log(`\n [SISTEMA AL DÍA] No se detectó ninguna versión superior en GitHub.`);
       console.log(` Continuando con la versión local ${versionLocal}...`);
-      process.exit(0);
+      lanzarServidorLocal();
+      terminarSiempre(0, null);
     }
   }
 
@@ -513,7 +637,8 @@ async function comprobarYActualizar() {
   if (!actualizacionDisponible) {
     console.log(`\n [SISTEMA LISTO] Continuando ejecución local con versión ${versionLocal}.`);
     console.log(' Procediendo directamente al inicio del servidor y pantalla de login...');
-    process.exit(0);
+    lanzarServidorLocal();
+    terminarSiempre(0, null);
   }
 
   // 5. ¡Nueva versión encontrada! Descargar e instalar preservando la BD
@@ -579,11 +704,51 @@ async function comprobarYActualizar() {
     try {
       if (fs.existsSync(rutaDescarga)) fs.unlinkSync(rutaDescarga);
     } catch (_) {}
-    process.exit(1);
+    // Red lenta para DESCARGAS (paquetes grandes): NO bloquear el arranque.
+    // El .bat puede tardar en reintentar, asi que lanzamos el servidor nosotros.
+    lanzarServidorLocal();
+    terminarSiempre(0, null);
+  }
+}
+
+// ==================== AUTO-ARRANQUE DEL SERVIDOR ====================
+// El comprobador ya NO depende de que iniciar_gimnasio.bat lance server.js
+// despues: el propio proceso lo arranca en una ventana/consola nueva antes de
+// terminar. Si el .bat tambien lo intentara, server.js detecta el puerto
+// ocupado y sale sin duplicarse, asi que nunca habra dos servidores.
+let servidorLanzado = false;
+function lanzarServidorLocal() {
+  // Si server.js nos invoco a nosotros (GF_ALREADY_RAN), NO abrir otro servidor:
+  // el padre continua y se lanza a si mismo justo despues.
+  if (servidorLanzado || process.env.GF_ALREADY_RAN === '1') return;
+  servidorLanzado = true;
+  const rutaServer = path.join(__dirname, 'server.js');
+  try {
+    if (process.platform === 'win32') {
+      // cmd /c "title ... & node server.js & pause": si algo falla al arrancar,
+      // la ventana queda visible con el error en vez de cerrarse sola.
+      const cmd = `title Gimnasio La Fabrica - Servidor && "${process.execPath}" "${rutaServer}" & pause`;
+      spawn('cmd.exe', ['/c', cmd], { detached: true, stdio: 'ignore', windowsHide: false }).unref();
+    } else {
+      const logStream = fs.openSync(path.join(os.tmpdir(), 'gimnasio_server.log'), 'a');
+      const hijo = spawn(process.execPath, [rutaServer], {
+        detached: true,
+        cwd: __dirname,
+        stdio: ['ignore', logStream, logStream]
+      });
+      hijo.on('error', () => {});
+      hijo.unref();
+      try { fs.closeSync(logStream); } catch (_) {}
+    }
+    console.log(' [ARRANQUE] Servidor web lanzado automaticamente (no se necesita esperar al lanzador).');
+  } catch (errLanzar) {
+    console.warn(' [ARRANQUE] No se pudo lanzar el servidor automaticamente:', errLanzar.message);
   }
 }
 
 comprobarYActualizar().catch(err => {
   console.warn('[Actualizador] Conexión omitida o error no fatal:', err.message);
-  process.exit(0);
+  // Nunca dejar el arranque a medias: aunque este paso falle, la app debe abrir.
+  try { lanzarServidorLocal(); } catch (_) {}
+  terminarSiempre(0, null);
 });

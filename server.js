@@ -73,21 +73,18 @@ const esScriptPrincipal = Boolean(process.argv[1] && (process.argv[1].endsWith('
 
 // ==================== COMPROBADOR DE ACTUALIZACIONES (RED DE SEGURIDAD) ====================
 // El lanzador oficial (iniciar_gimnasio.bat / .sh) ejecuta comprobar_y_actualizar.js
-// ANTES de arrancar la webapp, igual que en las versiones originales de produccion.
-// Este bloque es solo un respaldo para quien ejecute "node server.js" directamente:
-//  - Si hay actualizacion, el comprobador instala y sale con codigo 2: aqui
-//    terminamos con codigo 2 para que el bucle del .bat/.sh relance todo con los
-//    archivos nuevos.
-//  - Se lanza SIEMPRE con --sin-token-nuevo y GF_CHECK_DONE=1, para que NO emita
-//    un token de arranque nuevo a mitad del proceso (eso invalidaria sesiones en
-//    bucle). La invalidacion de sesion ocurre unicamente al ejecutar el lanzador
-//    desde cero, que es cuando comprobar_y_actualizar.js escribe el token nuevo.
-if (esScriptPrincipal && !process.env.GF_CHECK_DONE && fs.existsSync(path.join(__dirname, 'comprobar_y_actualizar.js'))) {
+// ANTES de arrancar la webapp. Este bloque es solo un respaldo para quien ejecute
+// "node server.js" directamente: SIEMPRE se lanza con GF_ALREADY_RAN=1 para que el
+// comprobador NO vuelva a abrir otro servidor (el auto-lanzamiento interno se
+// salta cuando esa variable esta presente). Si el comprobador instala una
+// actualizacion sale con codigo 2 y aqui terminamos con 2 para que el lanzador
+// (.bat) relance todo ya con los archivos nuevos.
+if (esScriptPrincipal && !process.env.GF_ALREADY_RAN && fs.existsSync(path.join(__dirname, 'comprobar_y_actualizar.js'))) {
   try {
     execSync(`"${process.execPath}" "${path.join(__dirname, 'comprobar_y_actualizar.js')}" --sin-token-nuevo`, {
       cwd: __dirname,
       stdio: 'inherit',
-      env: { ...process.env, GF_CHECK_DONE: '1' }
+      env: { ...process.env, GF_ALREADY_RAN: '1' }
     });
   } catch (errLanzador) {
     const status = typeof errLanzador.status === 'number' ? errLanzador.status : 0;
@@ -97,7 +94,7 @@ if (esScriptPrincipal && !process.env.GF_CHECK_DONE && fs.existsSync(path.join(_
       console.log('[Actualizador] Sistema actualizado. Relanzando con la nueva version...');
       process.exit(2);
     }
-    // Codigo 1 u otro error: sin red o fallo no fatal -> continuar con la version local.
+    // Cualquier otro codigo: sin red o fallo no fatal -> continuar con la version local.
     console.warn('[Actualizador] Continuando con la version local (sin conexion o fallo no fatal).');
   }
 }
