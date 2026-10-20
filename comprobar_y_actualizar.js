@@ -493,10 +493,20 @@ async function comprobarYActualizar() {
   // bloqueado SIN servidor util (causa clasica de "no se puede acceder").
   try { await despejarPuerto(3000); } catch (_) {}
 
+  // LIMPIEZA CRITICA: el marcador de simulacion era un archivo LOCAL de
+  // pruebas que por error se subio a GitHub; al descargarse el zip de
+  // actualizacion volvía a aparecer en todos los equipos y disparaba una
+  // "actualización simulada" infinita (incremento -> descarga -> relanzamiento
+  // -> otra simulacion) impidiendo que server.js llegara a abrir el puerto
+  // 3000 ("No se puede obtener acceso a esta página"). Aqui se ELIMINA siempre
+  // al iniciar, aunque venga dentro de un paquete de actualización viejo.
+  // La simulación solo se activa con el argumento explicito --simular.
+  try { if (fs.existsSync(ARCHIVO_FLAG_SIMULAR)) fs.unlinkSync(ARCHIVO_FLAG_SIMULAR); } catch (_) {}
+
   const versionInfo = obtenerInfoVersion();
   const repo = process.env.REPO_GITHUB || versionInfo.repo || 'YaxkinCortez/GYM';
   const args = process.argv.slice(2);
-  const forzarSimulacion = args.includes('--simular') || fs.existsSync(ARCHIVO_FLAG_SIMULAR);
+  const forzarSimulacion = args.includes('--simular');
 
   console.log('===============================================================================');
   console.log('         GIMNASIO LA FÁBRICA - COMPROBADOR DE VERSIONES GITHUB');
@@ -672,7 +682,12 @@ async function comprobarYActualizar() {
     // el objeto en memoria (obtenido al inicio), escribiríamos una versión antigua
     // y el sistema volvería a marcar siempre una actualización disponible.
     const versionInfoActual = obtenerInfoVersion();
-    versionInfoActual.version = formatearVersion(parsearVersion(actualizacionDisponible.version));
+    // Solo numeros x.y.z reales: jamas registrar etiquetas "build-*" ni hashes
+    // como version instalada (eso corrompia el registro y el login mostraba
+    // versiones falsas). Si la etiqueta remota no tiene numero, se conserva la
+    // version local ya registrada.
+    const arrInstalada = parsearVersion(actualizacionDisponible.version);
+    versionInfoActual.version = arrInstalada ? formatearVersion(arrInstalada) : versionLocal;
     versionInfoActual.repo = versionInfoActual.repo || repo;
     versionInfoActual.ultimoCommitSha = actualizacionDisponible.commitSha || versionInfoActual.ultimoCommitSha;
     versionInfoActual.fechaActualizacion = new Date().toISOString().split('T')[0];
