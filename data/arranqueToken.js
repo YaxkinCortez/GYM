@@ -24,12 +24,13 @@ export function obtenerOCrearTokenArranque() {
 }
 
 export function generarTokenArranque() {
-  // Lanzamiento interno del comprobador de actualizaciones (server.js ->
-  // comprobar_y_actualizar.js tras una instalacion): NO se emite token nuevo
-  // aqui porque eso invalidaria la sesion a mitad del arranque y podria
-  // provocar redirecciones en bucle. El token nuevo se genera cuando el
-  // usuario ejecuta iniciar_gimnasio.bat desde cero (sin GF_CHECK_DONE).
-  if (process.env.GF_CHECK_DONE === '1') {
+  // Lanzamiento interno (server.js -> comprobar_y_actualizar.js como respaldo,
+  // o relanzamiento del .bat tras instalar una actualizacion con GF_REINTENTO/
+  // GF_RELANZADO/GF_ALREADY_RAN): NO se emite token nuevo aqui porque eso
+  // invalidaria la sesion a mitad del arranque y podria provocar redirecciones
+  // en bucle. El token nuevo solo se genera al ejecutar iniciar_gimnasio.bat
+  // desde cero (doble clic normal, sin estas variables de entorno).
+  if (process.env.GF_ALREADY_RAN === '1' || process.env.GF_RELANZADO === '1' || process.env.GF_REINTENTO) {
     return obtenerOCrearTokenArranque();
   }
   const token = Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
