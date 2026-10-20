@@ -24,3 +24,4 @@ data/respaldos/*.json
 
 # Node portable descargado por el .bat (la carpeta nodejs/ del repo es aparte)
 nodejs_portable/
+nodejs/node.exe

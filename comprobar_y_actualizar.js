@@ -150,7 +150,40 @@ function matarNodezombies(puerto) {
 // nuevo server.js pueda tomar el puerto.
 async function despejarPuerto(puerto) {
   if (await puertoEstaOcupado(puerto)) {
-    console.log(` [OK] Ya existe un servidor activo en el puerto ${puerto}. No se duplicara.`);
+    // El puerto responde: puede ser un servidor LEGITIMO (la app ya abierta) o
+    // un proceso colgado que escucha pero no sirve paginas. Se hace una peticion
+    // HTTP real de cortesía: si NO responde con codigo alguno en 4 s, es un
+    // zombie -> se limpia y el nuevo servidor toma el puerto. Esta era la causa
+    // restante de "No se puede obtener acceso a esta pagina": procesos Node de
+    // lanzamientos anteriores seguían escuchando en 3000 pero sin responder.
+    let sano = false;
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 4000);
+      const resp = await fetch(`http://127.0.0.1:${puerto}/login.php`, { signal: ctrl.signal });
+      clearTimeout(t);
+      sano = resp && resp.status >= 200 && resp.status < 500;
+    } catch (_) { sano = false; }
+    if (sano) {
+      console.log(` [OK] Ya existe un servidor ACTIVO y respondiendo en el puerto ${puerto}. No se duplicara.`);
+      return;
+    }
+    console.log(` [AVISO] Hay un proceso escuchando en el puerto ${puerto} pero NO responde al HTTP (servidor colgado). Se terminara para poder reiniciar la app...`);
+    const nZ = matarNodezombies(puerto);
+    if (nZ > 0) console.log(` [LIMPIEZA] ${nZ} proceso(s) zombi terminados.`);
+    else {
+      // Si no pudimos identificar el PID por su linea de comando, usar netstat.
+      try {
+        const out = execSync(`netstat -ano | findstr :${puerto} | findstr LISTENING`, { encoding: 'utf8', timeout: 5000 });
+        const pids = [...new Set(out.split(/\r?\n/).map(l => (l.trim().match(/(\d+)\s*$/)||[])[1]).filter(Boolean))];
+        for (const pid of pids) {
+          if (parseInt(pid, 10) !== process.pid) {
+            try { execSync(`taskkill /F /PID ${pid}`, { stdio: 'ignore', timeout: 4000 }); } catch (_) {}
+          }
+        }
+      } catch (_) {}
+    }
+    await new Promise(r => setTimeout(r, 800));
     return;
   }
   const n = matarNodezombies(puerto);
@@ -740,9 +773,18 @@ function lanzarServidorLocal() {
   const rutaServer = path.join(__dirname, 'server.js');
   try {
     if (process.platform === 'win32') {
-      // cmd /c "title ... & node server.js & pause": si algo falla al arrancar,
-      // la ventana queda visible con el error en vez de cerrarse sola.
-      const cmd = `title Gimnasio La Fabrica - Servidor && "${process.execPath}" "${rutaServer}" & pause`;
+      // ANTES se lanzaba con stdio:'ignore': cualquier error del servidor
+      // (puerto ocupado, token invalido, sintaxis) moria en una ventana sin
+      // salida y el navegador mostraba "No se puede obtener acceso a esta
+      // pagina" sin dejar ni rastro. Ahora TODA la consola del servidor se
+      // vuelca a data\arranque.log y ademas queda la ventana visible con el
+      // registro completo al final.
+      const rutaLog = path.join(__dirname, 'data', 'arranque.log');
+      try {
+        fs.mkdirSync(path.dirname(rutaLog), { recursive: true });
+        fs.appendFileSync(rutaLog, `\r\n===== [${new Date().toISOString()}] Auto-arranque del servidor desde comprobador =====\r\n`);
+      } catch (_) {}
+      const cmd = `title Gimnasio La Fabrica - Servidor && "${process.execPath}" "${rutaServer}" 2>&1 | "%SystemRoot%\\System32\\more.com" >> "${rutaLog}" & echo. & echo [El servidor termino. Registro completo en data\\arranque.log] & pause`;
       spawn('cmd.exe', ['/c', cmd], { detached: true, stdio: 'ignore', windowsHide: false }).unref();
     } else {
       const logStream = fs.openSync(path.join(os.tmpdir(), 'gimnasio_server.log'), 'a');

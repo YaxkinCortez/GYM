@@ -200,6 +200,16 @@ if (esScriptPrincipal) {
   if (!puertoLibre) {
     console.log(`[Gimnasio La Fabrica] Ya existe un servidor activo en el puerto ${PORT}.`);
     console.log('[Gimnasio La Fabrica] Este lanzador no duplicará el servidor; puedes usar la ventana ya abierta.');
+    // IMPORTANTE: si somos el hijo que lanzo comprobar_y_actualizar.js para
+    // "garantizar" el arranque, NO debemos salir con exit(0) aqui: eso dejaba
+    // una ventana de consola cerrada sin ninguna explicacion y el navegador
+    // seguia mostrando "No se puede obtener acceso a esta pagina" cuando el
+    // proceso vivo en el puerto era en realidad un zombie caido. Avisamos y
+    // dejamos que el flujo continue (la comprobacion de arriba ya limpio o
+    // reportara el estado real del puerto).
+    if (process.env.GF_SERVIDOR_LANZADO_POR_COMPROBADOR === '1') {
+      console.warn('[Gimnasio La Fabrica] AVISO: el comprobador pidio lanzar este servidor, pero el puerto ya estaba ocupado por otro proceso. Revise data\\arranque.log y data\\iniciar.log.');
+    }
     process.exit(0);
   }
 }

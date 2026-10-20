@@ -1,7 +1,33 @@
 @echo off
-setlocal
+setlocal enableextensions enabledelayedexpansion
 title Gimnasio La Fabrica - Gestor de Inicio
+
+:: ============================================================================
+::  REGISTRO (LOG): TODO lo que hace este lanzador queda grabado en
+::  data\iniciar.log. El registro del servidor (node server.js) va aparte a
+::  data\arranque.log. Adjunta esos dos archivos para reportar cualquier fallo.
+::  Tecnica: el .bat se relanza con stdout+stderr redirigidos por PowerShell,
+::  que copia todo al log y ademas lo muestra en pantalla (tee). Si PowerShell
+::  faltara (nunca en Windows 11), se ejecuta normalmente sin log de lanzador.
+:: ============================================================================
 cd /d "%~dp0"
+if not exist "%~dp0data" mkdir "%~dp0data"
+set "GF_LOGFILE=%~dp0data\iniciar.log"
+
+if defined GF_LOG_TEE goto cuerpo
+where powershell.exe >nul 2>&1
+if errorlevel 1 goto cuerpo
+set "GF_LOG_TEE=1"
+>"%TEMP%\gf_launch.cmd" echo call "%~f0"
+>"%TEMP%\gf_tee.ps1" echo $tmp='%GF_LOGFILE%.tee'; $p = Start-Process -FilePath $env:ComSpec -ArgumentList '/c','%TEMP%\gf_launch.cmd' -PassThru -NoNewWindow -RedirectStandardOutput $tmp -RedirectStandardError "$tmp.err"; $p.WaitForExit(); Add-Content -Path '%GF_LOGFILE%' -Value '===== LANZADOR =====' -Encoding UTF8; Get-Content $tmp -Encoding Unicode -ErrorAction SilentlyContinue | Add-Content -Path '%GF_LOGFILE%' -Encoding UTF8; if ((Get-Item "$tmp.err" -ErrorAction SilentlyContinue).Length -gt 0) { Add-Content -Path '%GF_LOGFILE%' -Value '--- ERRORES ---' -Encoding UTF8; Get-Content "$tmp.err" -Encoding Unicode | Add-Content -Path '%GF_LOGFILE%' -Encoding UTF8 }; Remove-Item $tmp,"$tmp.err" -Force -ErrorAction SilentlyContinue; exit $p.ExitCode
+powershell -NoProfile -ExecutionPolicy Bypass -File "%TEMP%\gf_tee.ps1"
+set "EC=%errorlevel%"
+del "%TEMP%\gf_launch.cmd" >nul 2>&1
+del "%TEMP%\gf_tee.ps1" >nul 2>&1
+type "%~dp0data\iniciar.log" 2>nul
+endlocal & exit /b %EC%
+
+:cuerpo
 
 :: 1. Garantizar rutas del sistema en el PATH
 set "PATH=%SystemRoot%\system32;%SystemRoot%;%SystemRoot%\System32\Wbem;%SystemRoot%\System32\WindowsPowerShell\v1.0\;%~dp0nodejs;%~dp0;%PATH%"
