@@ -155,26 +155,13 @@ if (esScriptPrincipal && fs.existsSync(RUTA_MARCADOR_REINICIO)) {
 // redirigida a un archivo, las tuberías heredadas podían BLOQUEAR al comprobador
 // y dejar el arranque a medias. Con pipe el servidor controla la lectura y no
 // hay riesgo de deadlock por buffers del SO.
-const __comprobadorHijo = esScriptPrincipal && !process.env.GF_ALREADY_RAN
-  ? spawn(process.execPath, [path.join(__dirname, 'comprobar_y_actualizar.js'), '--sin-token-nuevo'], {
-      cwd: __dirname,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
-      env: { ...process.env, GF_ALREADY_RAN: '1' }
-    })
-  : null;
-if (__comprobadorHijo) {
-  __comprobadorHijo.stdout.on('data', (d) => process.stdout.write(String(d)));
-  __comprobadorHijo.stderr.on('data', (d) => process.stderr.write(String(d)));
-  console.log('[Actualizador] Comprobación de GitHub lanzada en segundo plano (el servidor arranca sin esperarla).');
-  __comprobadorHijo.on('exit', (codigo) => {
-    if (codigo === 2) {
-      setTimeout(() => relanzarServidor('actualización instalada en segundo plano al arrancar'), 400);
-    }
-  });
-  __comprobadorHijo.on('error', (errH) => {
-    console.warn('[Actualizador] No se pudo iniciar la comprobación en segundo plano:', errH.message);
-  });
+// MODO LOCAL (decisión del proyecto desde v1.3.0): el sistema NO consulta ni
+// descarga nada de GitHub al arrancar. Todo es 100% local/offline. Las
+// actualizaciones se aplican manualmente reemplazando archivos o con git pull.
+// Se conserva el código por si se reactiva en el futuro.
+const __comprobadorHijo = null;
+if (esScriptPrincipal) {
+  console.log('[Modo Local] Actualizaciones desactivadas: el sistema funciona 100% offline.');
 }
 
 // Scheduler de comprobación para respaldos automáticos programados a una hora específica
@@ -1719,11 +1706,16 @@ async function consultarGitHub(repo) {
   }
 }
 
+// MODO LOCAL (v1.3.0): la página de actualizaciones ya NO consulta GitHub ni
+// ofrece descargas. Solo muestra la versión local y el historial. Las acciones
+// antiguas (comprobar_ahora / simular / instalar) se responden con un aviso.
+const AVISO_MODO_LOCAL = 'ℹ️ Modo local activo: las actualizaciones automáticas por GitHub fueron desactivadas en la v1.3.0. El sistema funciona 100% offline.';
+
 app.get(['/actualizaciones', '/pages/actualizaciones.php'], requireAdmin, (req, res) => {
   const updater = store.sistema_actualizaciones;
   updater.versionActual = obtenerVersionLocal();
-  const flagPath = path.join(__dirname, 'data', 'simular_actualizacion.flag');
-  const banderaBatActiva = fs.existsSync(flagPath);
+  // En modo local nunca hay actualización pendiente "disponible".
+  updater.actualizacionDisponible = null;
 
   const historial = store.historial_actualizaciones.slice().reverse();
   const totalClientes = store.clients.length;
@@ -1735,7 +1727,8 @@ app.get(['/actualizaciones', '/pages/actualizaciones.php'], requireAdmin, (req, 
     mensaje: req.query.msg || '',
     tipo_mensaje: req.query.msg_type || 'success',
     updater,
-    banderaBatActiva,
+    banderaBatActiva: false,
+    modoLocal: true,
     historial,
     totalClientes,
     totalVentas,
@@ -1755,7 +1748,14 @@ app.post(['/actualizaciones', '/pages/actualizaciones.php'], requireAdmin, async
     return res.redirect(req.headers.referer || '/pages/dashboard.php');
   }
 
-  if (accion === 'comprobar_ahora') {
+  // Acciones heredadas del modo GitHub: desactivadas en modo local.
+  if (['comprobar_ahora', 'simular_nueva_version', 'simular_para_bat', 'instalar_actualizacion'].includes(accion)) {
+    return res.redirect(
+      '/pages/actualizaciones.php?msg=' + encodeURIComponent(AVISO_MODO_LOCAL) + '&msg_type=info'
+    );
+  }
+
+  if (false && accion === 'comprobar_ahora') { // eslint-disable-line — código antiguo conservado como referencia (modo GitHub desactivado)
     updater.ultimaComprobacion = now;
     const resultado = await consultarGitHub(updater.repo);
 

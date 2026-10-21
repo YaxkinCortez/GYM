@@ -44,8 +44,18 @@ import { generarTokenArranque } from './data/arranqueToken.js';
 // El reinicio AUTOMATICO por actualizacion puede pasar por aqui cuando el
 // .bat se relanza (con GF_REINTENTO/GF_RELANZADO en el entorno): en ese caso
 // NO se emite token nuevo, para no cerrar la sesion a mitad del arranque.
+// MODO LOCAL (v1.3.0): este comprobador ya NO se ejecuta desde el lanzador ni
+// desde server.js; todo queda 100% offline. Si alguien lo corre a mano, solo
+// renueva el token de arranque y sale sin tocar la red.
 if (!process.argv.includes('--sin-token-nuevo') && process.env.GF_RELANZADO !== '1' && !process.env.GF_REINTENTO) {
   try { generarTokenArranque(); } catch (_) {}
+}
+if (!process.argv.includes('--forzar-github')) {
+  console.log('\n===============================================================================');
+  console.log(' [MODO LOCAL] La comprobación/descarga de actualizaciones por GitHub está');
+  console.log(' desactivada desde la v1.3.0. El sistema arranca 100% offline.');
+  console.log('===============================================================================\n');
+  process.exit(0);
 }
 
 // ==================== GARANTIA DE SALIDA (anti "no arranca") ====================

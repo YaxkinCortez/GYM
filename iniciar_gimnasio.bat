@@ -110,72 +110,46 @@ echo.
 echo [OK] Motor Node.js detectado: %NODE_CMD%
 echo.
 
-:: 3. Comprobacion de actualizaciones + arranque garantizado.
-:: El comprobador (comprobar_y_actualizar.js) AHORA LANZA POR SI SOLO server.js
-:: en una ventana nueva (con pause para que se vea cualquier error) antes de
-:: terminar, tanto si hay Internet como si no. Esto elimina las dos causas
-:: historicas de "No se puede obtener acceso a esta pagina":
-::   a) el comprobador quedandose colgado esperando a GitHub y
-::   b) procesos Node zombis que dejaban el puerto 3000 bloqueado.
-echo [1/2] Comprobando actualizaciones e iniciando servidor...
+:: 3. ARRANQUE MODO LOCAL (v1.3.0): NO se consulta ni descarga nada de GitHub.
+:: El sistema es 100%% local/offline; las actualizaciones se aplican manualmente
+:: (git pull o reemplazo de archivos). Este lanzador solo: detecta Node, inicia
+:: server.js y abre la app cuando responde. Mas simple = menos puntos de fallo.
+echo [1/2] Iniciando servidor local (modo offline)...
 
-set "PROYECTO_PORTABLE="
-if exist "%~dp0nodejs\node.exe" set "PROYECTO_PORTABLE=1"
-
-:: Si ya hay un servidor vivo respondiendo en el puerto 3000, NO duplicarlo.
+:: Si ya hay un servidor vivo escuchando en el puerto 3000, NO duplicarlo.
 netstat -ano 2>nul | findstr /R /C:":3000 .*LISTENING" >nul 2>&1
 if not errorlevel 1 (
     echo [OK] El servidor ya se encuentra activo en el puerto 3000.
-    goto abrir_navegador
+    goto verificar_http
 )
 
-:: Codigo 2 = se instalo una version nueva: volver a comprobar hasta quedar al dia.
->>"%GF_LOGFILE%" echo [LANZADOR] Iniciando comprobador de actualizaciones %DATE% %TIME%
->>"%GF_ARRANQUE%" echo [LANZADOR .BAT] Llamando al comprobador %DATE% %TIME%
-"%NODE_CMD%" "%~dp0comprobar_y_actualizar.js" --sin-token-nuevo
-if errorlevel 2 goto bucle_actualizador
-
-:: Fallback de SEGURIDAD: lanzar server.js desde AQUI con ventana visible, SIEMPRE
-:: (aunque el comprobador ya intente abrirlo). server.js verifica con HTTP real
-:: quien ocupa el puerto 3000: si hay un servidor vivo NO se duplica y sale
-:: limpio; si hay un zombie lo elimina y toma el puerto. Antes este paso estaba
-:: condicionado a que NO existiera nodejs\ portable: con portable instalado
-:: NUNCA se ejecutaba y quedabamos dependientes 100%% del lanzamiento interno del
-:: comprobador (el unico que fallaba en silencio -> "no se puede acceder").
-:: Escribir el comando del servidor en un .bat auxiliar (sin comillas anidadas fragiles).
+:: Lanzar server.js en su propia ventana visible, escribiendo TODO su output a
+:: data\arranque.log. Se usa un .bat auxiliar para evitar comillas anidadas
+:: fragiles (causa historica de ventanas que morian sin registrar nada).
 set "BAT_SERVIDOR=%~dp0data\servidor_ventana.bat"
 >"%BAT_SERVIDOR%" echo @echo off
 >>"%BAT_SERVIDOR%" echo title Gimnasio La Fabrica - Servidor
->>"%BAT_SERVIDOR%" echo echo ===== [VENTANA SERVIDOR desde BAT] %DATE% %TIME% =====
+>>"%BAT_SERVIDOR%" echo cd /d "%~dp0"
+>>"%BAT_SERVIDOR%" echo echo ===== [VENTANA SERVIDOR] %DATE% %TIME% ===== ^>^> "%GF_ARRANQUE%"
 >>"%BAT_SERVIDOR%" echo "%NODE_CMD%" "%~dp0server.js" ^>^> "%GF_ARRANQUE%" 2^>^&1
 >>"%BAT_SERVIDOR%" echo set CODIGO=!ERRORLEVEL!
->>"%BAT_SERVIDOR%" echo echo [SERVIDOR TERMINO codigo !CODIGO!] %DATE% %TIME%
 >>"%BAT_SERVIDOR%" echo echo [SERVIDOR TERMINO codigo !CODIGO!] %DATE% %TIME% ^>^> "%GF_ARRANQUE%"
 >>"%BAT_SERVIDOR%" echo echo.
 >>"%BAT_SERVIDOR%" echo echo Si la app no abrio, copie data\arranque.log y data\iniciar.log para diagnosticar.
 >>"%BAT_SERVIDOR%" echo pause
 start "Gimnasio La Fabrica - Servidor" /MIN "%COMSPEC%" /c "%BAT_SERVIDOR%"
->>"%GF_LOGFILE%" echo [LANZADOR] Ventana del servidor lanzada desde el .bat %DATE% %TIME%
-goto lanzador_listo
+>>"%GF_LOGFILE%" echo [LANZADOR] Ventana del servidor lanzada (modo local) %DATE% %TIME%
 
-:bucle_actualizador
->>"%GF_LOGFILE%" echo [LANZADOR] Actualizacion instalada, re-comprobando... %DATE% %TIME%
-"%NODE_CMD%" "%~dp0comprobar_y_actualizar.js" --sin-token-nuevo
-if errorlevel 2 goto bucle_actualizador
-goto lanzador_listo
-
-:lanzador_listo
-
-:: Esperar a que el puerto 3000 este ESCUCHANDO (maximo ~15s). Ojo: escuchar el
-:: puerto no significa responder; antes se abria el navegador aqui mismo y por
-:: eso salia "No se puede obtener acceso a esta pagina" cuando el proceso que
-:: ocupaba el puerto era un zombie o el servidor moria despues. Ahora la espera
-:: real de respuesta HTTP se hace aqui mismo, antes de abrir el navegador.
+:verificar_http
+:: Esperar a que el puerto 3000 escuche (max ~15s) y luego verificar respuesta
+:: HTTP REAL antes de abrir el navegador. Abrir el navegador "a ciegas" era la
+:: causa de ver "No se puede obtener acceso a esta pagina".
 set "PUERTO_VIVO="
 for /l %%i in (1,1,15) do (
     netstat -ano 2>nul | findstr /R /C:":3000 .*LISTENING" >nul 2>&1
     if not errorlevel 1 set "PUERTO_VIVO=%%i"
-    if not defined PUERTO_VIVO ping 127.0.0.1 -n 2 >nul 2>&1
+    if defined PUERTO_VIVO goto puerto_escuchando
+    ping 127.0.0.1 -n 2 >nul 2>&1
 )
 
 :puerto_escuchando
@@ -185,20 +159,18 @@ if defined PUERTO_VIVO (
     >>"%GF_ARRANQUE%" echo [LANZADOR .BAT] Puerto 3000 escuchando %DATE% %TIME%
 ) else (
     echo [AVISO] El puerto 3000 no quedo escuchando tras 15 segundos.
-    echo [AVISO] Revise data\arranque.log ^^^y data\iniciar.log para ver el error.
+    echo [AVISO] Revise data\arranque.log y data\iniciar.log para ver el error.
     >>"%GF_LOGFILE%" echo [LANZADOR] AVISO puerto 3000 NO escucha tras 15s %DATE% %TIME%
+    goto diagnostico_final
 )
 
-:: Verificacion HTTP REAL antes de abrir el navegador (max ~10s mas).
-:: Se pide /login.php con curl (incluido en Windows 10/11); si responde 2xx/3xx,
-:: recien entonces se abre la app. Si no responde, se muestra el diagnostico.
-if not defined PUERTO_VIVO goto diagnostico_final
 where curl.exe >nul 2>&1
 if errorlevel 1 goto abrir_navegador
 set "HTTP_OK="
 for /l %%i in (1,1,10) do (
     curl.exe -s -k -o nul --max-time 3 "http://127.0.0.1:3000/login.php" && set "HTTP_OK=%%i"
-    if not defined HTTP_OK ping 127.0.0.1 -n 2 >nul 2>&1
+    if defined HTTP_OK goto servidor_responde
+    ping 127.0.0.1 -n 2 >nul 2>&1
 )
 
 :diagnostico_final

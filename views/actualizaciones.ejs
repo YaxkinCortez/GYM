@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Actualizaciones de GitHub - Gimnasio La Fábrica</title>
+    <title>Estado del Sistema - Gimnasio La Fábrica</title>
     <link href="/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="/css/font-awesome.min.css">
     <link rel="stylesheet" href="/css/style.css">
@@ -16,16 +16,8 @@
             <main class="col-md-10 ms-sm-auto px-md-4 main-content">
                 <div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
                     <div>
-                        <h1><i class="fas fa-cloud-arrow-down me-2"></i>Actualizaciones del Sistema</h1>
-                        <p class="text-muted mb-0 small">Enlace con GitHub, comprobación de nuevas versiones e instalación automática segura</p>
-                    </div>
-                    <div class="d-flex flex-wrap gap-2">
-                        <form method="POST" action="/pages/actualizaciones.php" class="m-0">
-                            <input type="hidden" name="accion" value="comprobar_ahora">
-                            <button type="submit" class="btn btn-primary shadow-sm">
-                                <i class="fas fa-rotate me-1"></i> Comprobar Actualizaciones en GitHub
-                            </button>
-                        </form>
+                        <h1><i class="fas fa-shield-halved me-2"></i>Estado del Sistema</h1>
+                        <p class="text-muted mb-0 small">Versión local instalada e historial de actualizaciones (modo local, sin conexión a GitHub)</p>
                     </div>
                 </div>
 
@@ -43,20 +35,15 @@
                             <div class="card-body">
                                 <div class="d-flex justify-content-between align-items-start mb-3">
                                     <div>
-                                        <small class="text-muted text-uppercase fw-bold">Estado de Sincronización</small>
-                                        <h3 class="fw-bold my-1 text-dark">
-                                            <%= updater.actualizacionDisponible ? '¡Nueva Versión Detectada!' : 'Sistema Totalmente Actualizado' %>
-                                        </h3>
+                                        <small class="text-muted text-uppercase fw-bold">Estado de la Versión Local</small>
+                                        <h3 class="fw-bold my-1 text-dark">Sistema Operativo en Modo Local</h3>
                                         <p class="text-muted small mb-0">
-                                            Repositorio oficial vinculado: 
-                                            <a href="https://github.com/<%= updater.repo %>" target="_blank" rel="noopener" class="fw-bold text-decoration-none">
-                                                <i class="fab fa-github me-1"></i><%= updater.repo %>
-                                            </a>
+                                            Este equipo funciona 100% offline. Las actualizaciones se aplican manualmente por el administrador del sistema.
                                         </p>
                                     </div>
-                                    <span class="badge <%= updater.actualizacionDisponible ? 'bg-warning text-dark' : 'bg-success' %> fs-6 px-3 py-2">
-                                        <i class="fas <%= updater.actualizacionDisponible ? 'fa-bell' : 'fa-check-circle' %> me-1"></i>
-                                        <%= updater.actualizacionDisponible ? 'Actualización Lista' : 'Al Día' %>
+                                    <span class="badge bg-success fs-6 px-3 py-2">
+                                        <i class="fas fa-check-circle me-1"></i>
+                                        v<%= updater.versionActual %>
                                     </span>
                                 </div>
 
@@ -71,29 +58,9 @@
                                     </div>
                                 </div>
 
-                                <!-- SECCIÓN DE INSTALACIÓN INMEDIATA SI HAY ACTUALIZACIÓN DISPONIBLE -->
-                                <% if (updater.actualizacionDisponible) { %>
-                                    <div class="alert alert-warning border-warning d-flex align-items-center gap-3 mb-3">
-                                        <i class="fas fa-download fa-2x text-warning"></i>
-                                        <div class="flex-grow-1">
-                                            <div class="fw-bold text-dark">Nueva Versión <%= updater.actualizacionDisponible.version %></div>
-                                            <div class="small text-muted"><%= updater.actualizacionDisponible.descripcion %></div>
-                                        </div>
-                                    </div>
-
-                                    <div class="d-flex flex-wrap gap-2 align-items-center">
-                                        <form method="POST" action="/pages/actualizaciones.php" class="m-0 flex-grow-1" onsubmit="return confirm('¿Descargar e instalar automáticamente la versión <%= updater.actualizacionDisponible.version %>? Tu base de datos local será respaldada y preservada.');">
-                                            <input type="hidden" name="accion" value="instalar_actualizacion">
-                                            <button type="submit" class="btn btn-success w-100 py-2 fw-bold fs-5 shadow-sm">
-                                                <i class="fas fa-cloud-arrow-down me-2"></i> Descargar e Instalar Ahora
-                                            </button>
-                                        </form>
-                                    </div>
-                                <% } else { %>
-                                    <div class="alert alert-success bg-success-subtle text-success border-success small mb-0">
-                                        <i class="fas fa-shield-check me-2"></i>Tu sistema cuenta con las últimas optimizaciones y correcciones del repositorio GitHub.
-                                    </div>
-                                <% } %>
+                                <div class="alert alert-success bg-success-subtle text-success border-success small mb-0">
+                                    <i class="fas fa-shield-check me-2"></i>Tu sistema cuenta con la versión más reciente instalada localmente (<%= updater.versionActual %>). No se realizan descargas automáticas.
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -138,100 +105,22 @@
                                     </ul>
                                 </div>
 
-                                <form method="POST" action="/pages/actualizaciones.php" class="border-top pt-3">
-                                    <input type="hidden" name="accion" value="simular_nueva_version">
-                                    <button type="submit" class="btn btn-sm btn-outline-secondary w-100">
-                                        <i class="fas fa-code-branch me-1"></i> Simular Disponibilidad de Nueva Versión
-                                    </button>
-                                </form>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- LANZADOR AUTÓNOMO Y ACTUALIZACIÓN EN iniciar_gimnasio.bat -->
+                <!-- MODO LOCAL -->
                 <div class="card shadow-sm mb-4 border-start border-4 border-primary">
                     <div class="card-body">
-                        <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
-                            <div class="d-flex align-items-center gap-2">
-                                <span class="badge bg-primary fs-6 px-3 py-2">
-                                    <i class="fas fa-terminal me-1"></i> iniciar_gimnasio.bat
-                                </span>
-                                <h5 class="fw-bold mb-0 text-dark">Inicio Inteligente con Actualización y Auto-Reinicio</h5>
-                            </div>
-                            <div>
-                                <% if (banderaBatActiva) { %>
-                                    <span class="badge bg-warning text-dark fs-6 px-3 py-2">
-                                        <i class="fas fa-bolt me-1"></i> Simulación activa para el próximo lanzamiento
-                                    </span>
-                                <% } else { %>
-                                    <span class="badge bg-success-subtle text-success fs-6 px-3 py-2">
-                                        <i class="fas fa-check-circle me-1"></i> Comprobador activo en arranque
-                                    </span>
-                                <% } %>
-                            </div>
+                        <div class="d-flex align-items-center gap-2 mb-2">
+                            <span class="badge bg-primary fs-6 px-3 py-2"><i class="fas fa-terminal me-1"></i> iniciar_gimnasio.bat</span>
+                            <h5 class="fw-bold mb-0 text-dark">Inicio 100% Local (Sin Descargas)</h5>
                         </div>
-
-                        <p class="text-secondary mb-3">
-                            Al ejecutar <code>iniciar_gimnasio.bat</code> (en Windows) o <code>./iniciar_gimnasio.sh</code> (en Linux/macOS), el lanzador ejecuta automáticamente el ciclo completo:
+                        <p class="text-secondary mb-0">
+                            Al ejecutar <code>iniciar_gimnasio.bat</code>, el sistema arranca directamente el servidor local y abre la aplicación.
+                            No se consulta Internet ni se descargan paquetes: tus datos nunca se modifican durante el arranque.
                         </p>
-
-                        <div class="row g-3 mb-3">
-                            <div class="col-md-4">
-                                <div class="p-3 bg-light rounded border h-100">
-                                    <div class="fw-bold text-primary mb-1">
-                                        <i class="fas fa-1 me-1 text-primary"></i> 1. Comprobación Inicial
-                                    </div>
-                                    <p class="small text-muted mb-0">
-                                        Antes de arrancar la webapp, consulta la API de GitHub para verificar si existe un release o versión más reciente.
-                                    </p>
-                                </div>
-                            </div>
-                            <div class="col-md-4">
-                                <div class="p-3 bg-light rounded border h-100">
-                                    <div class="fw-bold text-success mb-1">
-                                        <i class="fas fa-2 me-1 text-success"></i> 2. Descarga e Instalación Segura
-                                    </div>
-                                    <p class="small text-muted mb-0">
-                                        Si hay nueva versión, la descarga e instala de inmediato. <strong>La base de datos local no se modifica</strong> y se crea un respaldo automático preventivo.
-                                    </p>
-                                </div>
-                            </div>
-                            <div class="col-md-4">
-                                <div class="p-3 bg-light rounded border h-100">
-                                    <div class="fw-bold text-info mb-1">
-                                        <i class="fas fa-3 me-1 text-info"></i> 3. Auto-Relanzamiento
-                                    </div>
-                                    <p class="small text-muted mb-0">
-                                        Al concluir la actualización, se vuelve a lanzar <code>iniciar_gimnasio.bat</code> automáticamente para empezar la webapp actualizada.
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="d-flex flex-wrap gap-2 align-items-center pt-2 border-top">
-                            <% if (banderaBatActiva) { %>
-                                <form method="POST" action="/pages/actualizaciones.php" class="m-0">
-                                    <input type="hidden" name="accion" value="cancelar_simulacion_bat">
-                                    <button type="submit" class="btn btn-outline-danger btn-sm">
-                                        <i class="fas fa-xmark me-1"></i> Desactivar Simulación
-                                    </button>
-                                </form>
-                                <span class="small text-muted">
-                                    Listo: La próxima vez que abras <code>iniciar_gimnasio.bat</code>, detectará la actualización, la instalará sin tocar tu base de datos y se relanzará.
-                                </span>
-                            <% } else { %>
-                                <form method="POST" action="/pages/actualizaciones.php" class="m-0">
-                                    <input type="hidden" name="accion" value="simular_para_bat">
-                                    <button type="submit" class="btn btn-outline-primary btn-sm">
-                                        <i class="fas fa-play me-1"></i> Probar actualización en el próximo inicio de iniciar_gimnasio.bat
-                                    </button>
-                                </form>
-                                <span class="small text-muted">
-                                    Haz clic para forzar que el próximo lanzamiento de <code>iniciar_gimnasio.bat</code> ejecute el flujo de actualización y reinicio.
-                                </span>
-                            <% } %>
-                        </div>
                     </div>
                 </div>
 
@@ -261,7 +150,6 @@
                                         <td><span class="badge bg-dark font-monospace fs-6"><%= h.version %></span></td>
                                         <td><%= h.fecha %></td>
                                         <td>
-                                            <i class="fab fa-github text-muted me-1"></i>
                                             <span class="small"><%= h.origen %></span>
                                         </td>
                                         <td class="fw-bold"><%= h.descripcion %></td>

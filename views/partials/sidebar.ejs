@@ -15,7 +15,7 @@ const menu = [
     { file: 'balance.php', icon: 'fas fa-scale-balanced', label: 'Balance Financiero', admin: true },
     { file: 'respaldos.php', icon: 'fas fa-database', label: 'Copias de Seguridad', admin: true },
     { file: 'tablas.php', icon: 'fas fa-table-list', label: 'Explorador de Tablas', admin: true },
-    { file: 'actualizaciones.php', icon: 'fas fa-cloud-arrow-down', label: 'Actualizaciones GitHub', admin: true }
+    { file: 'actualizaciones.php', icon: 'fas fa-circle-info', label: 'Estado del Sistema', admin: true }
 ];
 const userRole = (usuario && usuario.role) ? usuario.role : 'user';
 const isAdmin = userRole === 'admin' || userRole === 'administrador';
