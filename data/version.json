@@ -1,6 +1,6 @@
 {
-  "version": "1.3.6",
+  "version": "1.3.7",
   "repo": "YaxkinCortez/GYM",
   "fechaActualizacion": "2026-10-22",
-  "descripcion": "Fechas latino dd/mm/aaaa en todo el sistema, correccion del dia 'un dia atras' (UTC), acumulacion real de membresias sin concluir la vigente (estado Programada)"
+  "descripcion": "v1.3.7: restaurado bloqueo por deuda pendiente para adquirir membresias, conteo exacto de dias restantes (convencion 'quedan N dias' sin contar el dia actual), re-autenticacion con usuario+contrasena al instalar actualizaciones verificada"
 }

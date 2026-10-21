@@ -932,6 +932,17 @@ app.post(['/clientes', '/pages/clientes.php'], requireAuth, (req, res) => {
     // a ISO yyyy-mm-dd aqui (se guarda en BD y se muestra al usuario en dd/mm/aaaa).
     const startDate = (req.body.startDate || today).slice(0, 10);
 
+    // FIX v1.3.7 (RESTAURADA): BLOQUEO POR DEUDA PENDIENTE. Si el socio tiene
+    // deudas sin liquidar NO puede adquirir membresias hasta cubrirlas.
+    const deudaPendienteCliente = store.client_debts
+      .filter(d => d.clientId === clientId && d.status !== 'liquidada')
+      .reduce((s, d) => s + (Number(d.remainingAmount) || 0), 0);
+    if (deudaPendienteCliente > 0.001) {
+      return res.redirect(
+        '/pages/clientes.php?msg=' + encodeURIComponent(`⛔ No se puede asignar la membresía: el socio tiene una deuda pendiente de $${deudaPendienteCliente.toFixed(2)}. Debe liquidarla primero en la sección de Abonos.`) + '&msg_type=danger'
+      );
+    }
+
     let mensajeAcumulacion = '';
     const plan = store.memberships.find(m => m.id === membershipId);
     if (plan) {
@@ -955,7 +966,7 @@ app.post(['/clientes', '/pages/clientes.php'], requireAuth, (req, res) => {
         baseD.setDate(baseD.getDate() + 1);
         startD = baseD;
         startISO = `${baseD.getFullYear()}-${String(baseD.getMonth() + 1).padStart(2, '0')}-${String(baseD.getDate()).padStart(2, '0')}`;
-        const diasRestantesPrevios = Math.max(getDaysDiff(ultimaVigente.endDate, hoyStr), 0) + 1;
+        const diasRestantesPrevios = Math.max(getDaysDiff(ultimaVigente.endDate, hoyStr), 0); // FIX v1.3.7: no contar el dia de hoy como restante (convencion usuario: "quedan 3 dias")
         mensajeAcumulacion = ` Se acumularon ${diasRestantesPrevios} dia(s) restante(s): la nueva membresia inicia el ${formatearFechaLatina(startISO)} y vence con ${diasRestantesPrevios + duracionPlan} dias de vigencia acumulada.`;
       } else {
         startD = parseFechaLocal(startDate || hoyStr) || new Date();
