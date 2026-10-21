@@ -123,22 +123,21 @@ if not errorlevel 1 (
     goto verificar_http
 )
 
-:: Lanzar server.js en su propia ventana visible, escribiendo TODO su output a
-:: data\arranque.log. Se usa un .bat auxiliar para evitar comillas anidadas
-:: fragiles (causa historica de ventanas que morian sin registrar nada).
+:: Lanzar server.js EN SEGUNDO PLANO (oculto, sin ventana para el cliente).
+:: v1.3.2: toda la consola del servidor se redirige a data\arranque.log via el
+:: .bat auxiliar; ademas server.js duplica su propia salida al mismo log. El
+:: proceso vive desvinculado de esta ventana y solo se ve en el Administrador
+:: de tareas si alguien lo busca. Si algo falla, el diagnostico queda en los
+:: logs y esta ventana muestra la explicacion con pausa.
 set "BAT_SERVIDOR=%~dp0data\servidor_ventana.bat"
 >"%BAT_SERVIDOR%" echo @echo off
->>"%BAT_SERVIDOR%" echo title Gimnasio La Fabrica - Servidor
 >>"%BAT_SERVIDOR%" echo cd /d "%~dp0"
->>"%BAT_SERVIDOR%" echo echo ===== [VENTANA SERVIDOR] %DATE% %TIME% ===== ^>^> "%GF_ARRANQUE%"
+>>"%BAT_SERVIDOR%" echo echo ===== [SERVIDOR SEGUNDO PLANO] %DATE% %TIME% ===== ^>^> "%GF_ARRANQUE%"
 >>"%BAT_SERVIDOR%" echo "%NODE_CMD%" "%~dp0server.js" ^>^> "%GF_ARRANQUE%" 2^>^&1
 >>"%BAT_SERVIDOR%" echo set CODIGO=!ERRORLEVEL!
 >>"%BAT_SERVIDOR%" echo echo [SERVIDOR TERMINO codigo !CODIGO!] %DATE% %TIME% ^>^> "%GF_ARRANQUE%"
->>"%BAT_SERVIDOR%" echo echo.
->>"%BAT_SERVIDOR%" echo echo Si la app no abrio, copie data\arranque.log y data\iniciar.log para diagnosticar.
->>"%BAT_SERVIDOR%" echo pause
-start "Gimnasio La Fabrica - Servidor" /MIN "%COMSPEC%" /c "%BAT_SERVIDOR%"
->>"%GF_LOGFILE%" echo [LANZADOR] Ventana del servidor lanzada (modo local) %DATE% %TIME%
+start "" /MIN "%COMSPEC%" /c "%BAT_SERVIDOR%"
+>>"%GF_LOGFILE%" echo [LANZADOR] Servidor lanzado en segundo plano (sin ventanas visibles) %DATE% %TIME%
 
 :verificar_http
 :: Esperar a que el puerto 3000 escuche (max ~15s) y luego verificar respuesta
@@ -238,14 +237,9 @@ if exist "%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe" (
 start "" "%URL_APP%"
 
 :fin_lanzador
-echo.
-echo ===============================================================================
-echo  [OK] Gimnasio La Fabrica iniciado correctamente.
-echo  Puede cerrar esta ventana o dejarla abierta; el servidor sigue corriendo.
-echo  Registros por si algo falla: data\iniciar.log y data\arranque.log
-echo ===============================================================================
->>"%GF_LOGFILE%" echo ===== [LANZADOR] Fin OK %DATE% %TIME% =====
-:: FIX VENTANA QUE SE CIERRA: aqui estaba un `exit` (y antes un tee oculto de
-:: PowerShell) que mataba la consola sin dejar ver nada. Ahora SIEMPRE pausa.
-pause
+:: v1.3.2: experiencia de cliente limpia: el servidor corre en segundo plano y
+:: la app ya se abrio; esta ventana del lanzador se cierra sola sin pausas ni
+:: consolas visibles. Ante errores reales, las rutas con diagnostico y pausa
+:: quedan mas arriba; todo el historial vive en data\iniciar.log y arranque.log.
+>>"%GF_LOGFILE%" echo ===== [LANZADOR] Fin OK - ventana cerrada, servidor en segundo plano %DATE% %TIME% =====
 endlocal & exit /b 0

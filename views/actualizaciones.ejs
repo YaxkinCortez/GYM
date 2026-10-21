@@ -17,8 +17,14 @@
                 <div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
                     <div>
                         <h1><i class="fas fa-shield-halved me-2"></i>Estado del Sistema</h1>
-                        <p class="text-muted mb-0 small">Versión local instalada e historial de actualizaciones (modo local, sin conexión a GitHub)</p>
+                        <p class="text-muted mb-0 small">Versión local instalada e historial de actualizaciones. El arranque es 100% local; GitHub solo se consulta cuando tú pulses el botón.</p>
                     </div>
+                    <form method="POST" action="/pages/actualizaciones.php" class="m-0">
+                        <input type="hidden" name="accion" value="comprobar_ahora">
+                        <button type="submit" class="btn btn-primary btn-lg shadow-sm">
+                            <i class="fab fa-github me-2"></i>Buscar actualizaciones en GitHub
+                        </button>
+                    </form>
                 </div>
 
                 <% if (mensaje) { %>
@@ -36,13 +42,21 @@
                                 <div class="d-flex justify-content-between align-items-start mb-3">
                                     <div>
                                         <small class="text-muted text-uppercase fw-bold">Estado de la Versión Local</small>
-                                        <h3 class="fw-bold my-1 text-dark">Sistema Operativo en Modo Local</h3>
+                                        <% if (updater.actualizacionDisponible) { %>
+                                        <h3 class="fw-bold my-1 text-warning"><i class="fas fa-arrow-up-circle me-1"></i>Nueva versión disponible: <%= updater.actualizacionDisponible.version %></h3>
                                         <p class="text-muted small mb-0">
-                                            Este equipo funciona 100% offline. Las actualizaciones se aplican manualmente por el administrador del sistema.
+                                            Tu versión local es <strong><%= updater.versionActual %></strong>. Se encontró una versión más reciente en GitHub.
+                                            Al instalarla, tus datos se respaldan automáticamente y NO se modifica tu base de datos local.
                                         </p>
+                                        <% } else { %>
+                                        <h3 class="fw-bold my-1 text-dark">Sistema Operativo al Día</h3>
+                                        <p class="text-muted small mb-0">
+                                            El arranque del programa es 100% offline. Esta página solo consulta GitHub cuando tú pulsas el botón "Buscar actualizaciones".
+                                        </p>
+                                        <% } %>
                                     </div>
-                                    <span class="badge bg-success fs-6 px-3 py-2">
-                                        <i class="fas fa-check-circle me-1"></i>
+                                    <span class="badge <%= updater.actualizacionDisponible ? 'bg-warning text-dark' : 'bg-success' %> fs-6 px-3 py-2">
+                                        <i class="fas fa-<%= updater.actualizacionDisponible ? 'cloud-arrow-down' : 'check-circle' %> me-1"></i>
                                         v<%= updater.versionActual %>
                                     </span>
                                 </div>
@@ -58,9 +72,23 @@
                                     </div>
                                 </div>
 
-                                <div class="alert alert-success bg-success-subtle text-success border-success small mb-0">
-                                    <i class="fas fa-shield-check me-2"></i>Tu sistema cuenta con la versión más reciente instalada localmente (<%= updater.versionActual %>). No se realizan descargas automáticas.
+                                <% if (updater.actualizacionDisponible) { %>
+                                <div class="d-grid gap-2 mb-3">
+                                    <form method="POST" action="/pages/actualizaciones.php" class="m-0" onsubmit="return confirm('¿Instalar la versión <%= updater.actualizacionDisponible.version %>? Se creará un respaldo automático ANTES de instalar. Tu base de datos local NO se modifica.');">
+                                        <input type="hidden" name="accion" value="instalar_actualizacion">
+                                        <button type="submit" class="btn btn-success btn-lg shadow-sm">
+                                            <i class="fas fa-download me-2"></i>Descargar e Instalar Ahora (v<%= updater.actualizacionDisponible.version %>)
+                                        </button>
+                                    </form>
                                 </div>
+                                <div class="alert alert-warning bg-warning-subtle text-warning-emphasis border-warning small mb-0">
+                                    <i class="fas fa-circle-info me-2"></i>Origen: <%= updater.actualizacionDisponible.descripcion || 'GitHub main' %> (<%= updater.actualizacionDisponible.fecha || 'reciente' %>). La instalación cierra sesión y reinicia el sistema automáticamente al terminar; tus socios, cobros, adeudos e inventario quedan intactos.
+                                </div>
+                                <% } else { %>
+                                <div class="alert alert-success bg-success-subtle text-success border-success small mb-0">
+                                    <i class="fas fa-shield-check me-2"></i>Tu sistema cuenta con la versión más reciente instalada localmente (<%= updater.versionActual %>). No hay descargas pendientes.
+                                </div>
+                                <% } %>
                             </div>
                         </div>
                     </div>

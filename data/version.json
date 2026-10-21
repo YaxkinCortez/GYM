@@ -1,6 +1,6 @@
 {
-  "version": "1.3.0",
+  "version": "1.3.2",
   "repo": "YaxkinCortez/GYM",
-  "fechaActualizacion": "2026-10-21",
-  "descripcion": "Modo local: arranque sin comprobacion ni descargas de GitHub"
+  "fechaActualizacion": "2026-10-22",
+  "descripcion": "Boton de actualizaciones GitHub en Estado del Sistema + arranque 100% en segundo plano sin consolas visibles"
 }

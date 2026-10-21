@@ -113,7 +113,18 @@ function relanzarServidor(motivo = 'actualización instalada') {
   const opcionesHijo = {
     cwd: __dirname,
     detached: true,
-    stdio: 'ignore',
+    // FIX v1.3.2 (Windows 11): con stdio:'ignore' en un proceso detached, los
+    // descriptores heredados de la consola cmd quedaban colgando y el servidor
+    // nuevo podia morir al instante sin dejar rastro (el cliente veia "no se
+    // puede obtener acceso"). Ahora TODA la salida del proceso relanzado va a
+    // data\arranque.log, igual que en el arranque normal del .bat.
+    stdio: (() => {
+      try {
+        const rutaLog = path.join(__dirname, 'data', 'arranque.log');
+        fs.appendFileSync(rutaLog, `\r\n===== [${new Date().toISOString()}] ${motivo} - relanzando servidor =====\r\n`);
+        return ['ignore', fs.openSync(rutaLog, 'a'), fs.openSync(rutaLog, 'a')];
+      } catch (_) { return 'ignore'; }
+    })(),
     // GF_TOKEN_ARRANQUE: en un reinicio MANUAL (sin instalación) el proceso
     // nuevo hereda el token y la sesión sobrevive. PERO si existe el marcador
     // de instalación pendiente (acabamos de instalar una actualización desde
@@ -137,10 +148,39 @@ function relanzarServidor(motivo = 'actualización instalada') {
   });
   hijo.unref();
 
-  // Esperar a que el proceso nuevo tome el puerto antes de morir. El código de
-  // salida 10 indica al lanzador (iniciar_gimnasio.bat/sh) que debe volver a
-  // ejecutar server.js en la misma ventana para completar el reinicio.
-  setTimeout(() => process.exit(10), 1500);
+    // FIX v1.3.2: antes el reinicio dependia de un proceso detached que en
+    // Windows 11 podia morir con los descriptores heredados, dejando al
+    // cliente SIN servidor y SIN app ("no se puede obtener acceso"). Ahora
+    // este proceso NO muere hasta que un servidor NUEVO (con los archivos de
+    // la actualizacion recien instalada) este realmente respondiendo HTTP en
+    // el puerto 3000; entonces cierra su listener y se apaga con codigo 10
+    // para que el .bat (si aun vive) lo vea como reinicio completado.
+    setTimeout(() => {
+      let intentos = 0;
+      const MAX_INTENTOS = 45; // ~45 s de margen para descargas/arranque lentos
+      const vigilar = setInterval(async () => {
+        intentos++;
+        let sano = false;
+        try {
+          const resp = await fetch(`http://127.0.0.1:${puertoParaEspera()}/login.php?gf_reinicio=${Date.now()}`, { cache: 'no-store' });
+          sano = resp.ok;
+        } catch (_) { /* todavia no hay servidor nuevo */ }
+        if (sano && intentos > 2) {
+          clearInterval(vigilar);
+          console.log('[Auto-Reinicio] Servidor nuevo confirmado en el puerto. Esta instancia se retira con seguridad.');
+          try { guardarBaseDatos(); } catch (_) {}
+          try { if (server) server.close(); } catch (_) {}
+          setTimeout(() => process.exit(10), 400);
+        } else if (intentos >= MAX_INTENTOS) {
+          clearInterval(vigilar);
+          console.error('[Auto-Reinicio] El servidor nuevo NO llego a responder tras 45 s. Se mantiene vivo para no dejar al cliente sin aplicacion. Revise data\\arranque.log');
+        }
+      }, 1000);
+    }, 1000);
+}
+
+function puertoParaEspera() {
+  return parseInt(PORT, 10) || 3000;
 }
 
 // Watchdog: si quedó un marcador de reinicio pendiente (por ejemplo, se
@@ -302,20 +342,23 @@ function matarProcesosNodePropios() {
     console.log('[LIMPIEZA] Procesos Node zombies del proyecto terminados (si existían).');
   } catch (err) {
     // wmic ya no existe en Windows 11 24H2+: usar PowerShell como respaldo.
+    // FIX v1.3.2: el respaldo anterior usaba una cadena de escape triple
+    // (\\"...\\" dentro de '...') que PowerShell rechazaba con error de parsing,
+    // por lo que la limpieza de zombies NUNCA funcionaba en Windows 11.
+    // Sintaxis verificada: filtro WQL entre comillas simples dobles ('' = literal).
     try {
-      const out = execSync(
-        'powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \\"Name=\'node.exe\'\\" | Select-Object ProcessId,CommandLine | ConvertTo-Csv -NoTypeInformation"',
-        { encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] }
-      );
+      const rutaNorm = __dirname.replace(/[\\/]/g, '\\');
+      const ps = `Get-CimInstance Win32_Process -Filter "Name=''node.exe''" | Where-Object { ($_.CommandLine -match 'server\\.js|comprobar_y_actualizar\\.js') -and ($_.CommandLine -match '${rutaNorm}') } | ForEach-Object { $_.ProcessId }`;
+      const out = execSync(`powershell -NoProfile -Command "${ps}"`, {
+        encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'ignore']
+      });
       const miPid = String(process.pid);
       for (const linea of out.split(/\r?\n/)) {
-        if (!/server\.js|comprobar_y_actualizar\.js/i.test(linea)) continue;
-        if (!linea.includes(__dirname)) continue;
-        const m = linea.match(/^"?(\d+)"?,/);
-        if (!m || m[1] === miPid) continue;
-        try { execSync(`taskkill /F /PID ${m[1]} /T`, { stdio: 'ignore', windowsHide: true }); } catch (_) {}
+        const pid = linea.trim();
+        if (!/^\d+$/.test(pid) || pid === miPid) continue;
+        try { execSync(`taskkill /F /PID ${pid} /T`, { stdio: 'ignore', windowsHide: true }); } catch (_) {}
       }
-      console.log('[LIMPIEZA] (PowerShell) Procesos Node zombies revisados.');
+      console.log('[LIMPIEZA] (PowerShell) Procesos Node zombies del proyecto terminados (si existían).');
     } catch (_) {
       console.warn('[LIMPIEZA] No fue posible enumerar procesos Node:', err.message);
     }
@@ -1936,6 +1979,9 @@ app.post(['/actualizaciones', '/pages/actualizaciones.php'], requireAdmin, async
       );
     }
 
+    // FIX v1.3.2: versionAnterior estaba SIN DEFINIR aqui (ReferenceError que
+    // rompia el flujo post-instalacion). Se captura antes de persistir.
+    const versionAnterior = versionLocal;
     updater.versionActual = actualizacion.version;
     updater.actualizacionDisponible = null;
 
