@@ -120,6 +120,50 @@ function relanzarServidor(motivo = 'actualización instalada') {
   // que el nuevo tomara el puerto, el lanzador (.bat/.sh) reintentará con este
   // código de salida; nunca se acumulan más de 3 intentos.
   const reintento = parseInt(process.env.GF_REINTENTO || '0', 10) + 1;
+
+  // v1.4.0 REINICIO AUTOMATICO GARANTIZADO (pedido por el usuario): en vez de
+  // depender del bucle del .bat o de un hijo detached que hereda descriptores
+  // y puede morir con el padre, se crea un ARCHIVO AUXILIAR que hace la secuen-
+  // cia completa: espera a que este servidor muera -> mata TODO node.exe del
+  // equipo (garantiza que no quede ningun proceso viejo con codigo obsoleto)
+  // -> relanza iniciar_gimnasio.bat. El .bat arranca 100% offline, asi que el
+  // reinicio funciona incluso sin Internet. La ventana queda oculta porque el
+  // propio .bat lanza todo con windowsHide.
+  try {
+    const batRaiz = path.join(__dirname, 'iniciar_gimnasio.bat');
+    if (fs.existsSync(batRaiz)) {
+      const rutaRelanzador = path.join(__dirname, 'data', '_relanzar_post_actualizacion.bat');
+      fs.writeFileSync(rutaRelanzador, [
+        '@echo off',
+        'rem _relanzar_post_actualizacion.bat - generado automaticamente (v1.4.0)',
+        'rem Espera a que el servidor actual termine, limpia TODOS los node.exe',
+        'rem y relanza el sistema completo desde cero.',
+        'set /a CONT=0',
+        ':espera',
+        `tasklist /FI "PID eq ${process.pid}" 2>nul | findstr /I "${process.pid}" >nul`,
+        'if errorlevel 1 goto limpio',
+        'timeout /t 1 /nobreak >nul',
+        'set /a CONT+=1',
+        'if %CONT% LSS 60 goto espera',
+        ':limpio',
+        'taskkill /F /IM node.exe /T >nul 2>&1',
+        'timeout /t 2 /nobreak >nul',
+        'cd /d "%~dp0.. "',
+        'start "" /min cmd /c ""%~dp0..\\iniciar_gimnasio.bat" >> "%~dp0arranque.log" 2>&1"',
+        'del "%~f0"',
+        ''
+      ].join('\r\n'), 'utf-8');
+      const lanzador = spawn('cmd.exe', ['/c', rutaRelanzador], {
+        cwd: __dirname, detached: true, stdio: 'ignore', windowsHide: true
+      });
+      lanzador.on('error', () => {});
+      lanzador.unref();
+      console.log('[Auto-Reinicio] Relanzador auxiliar creado: tras morir este proceso se mataran todos los node.exe y se abrira de nuevo iniciar_gimnasio.bat.');
+      return; // el proceso morira con exit(10) cuando el navegador confirme; el relanzador se encarga del resto
+    }
+  } catch (errRelanz) {
+    console.warn('[Auto-Reinicio] No se pudo crear el relanzador auxiliar:', errRelanz.message, '- usando metodo directo.');
+  }
   // El hijo debe sobrevivir al padre. Con detached:true a secas, en Linux/macOS
   // el proceso nuevo puede morir junto al anterior (SIGHUP), por lo que se lanza
   // via 'setsid' fuera de la sesion del terminal. En Windows (produccion del
@@ -2047,8 +2091,18 @@ app.post(['/actualizaciones', '/pages/actualizaciones.php'], requireAdmin, async
     // Ademas, segun lo pedido, el proceso CIERRA LA SESION del usuario actual:
     // se destruye req.session antes de instalar y, tras el reinicio, habra que
     // volver a iniciar sesion con usuario y contrasena.
-    const confirmarUsuario = (req.body.confirmar_usuario || '').trim();
-    const confirmarPassword = req.body.confirmar_password || '';
+    // FIX v1.4.0: los <input name="..."> de la vista se envian como campos
+    // PLANO del POST (no anidados). Antes se leia solo el prefijo
+    // "confirmar_*"; si el navegador enviaba los nombres cortos (usuario/
+    // password) la validacion fallaba SIEMPRE y el flujo parecia "no pedir
+    // credenciales". Ahora se aceptan ambos juegos de nombres.
+    const confirmarUsuario = ((req.body.confirmar_usuario || req.body.usuario || '') + '').trim();
+    const confirmarPassword = (req.body.confirmar_password || req.body.password || '') + '';
+    if (!confirmarUsuario || !confirmarPassword) {
+      return res.redirect(
+        '/pages/actualizaciones.php?msg=' + encodeURIComponent('Para instalar la actualización debes escribir tu usuario y contraseña de confirmación.') + '&msg_type=warning'
+      );
+    }
     const sesionUsuario = req.session && req.session.usuario ? req.session.usuario : null;
     // FIX v1.3.8: el login guarda la identidad en req.session.usuario.name y
     // en las BD antiguas ese campo puede venir vacio. Antes se comparaba por

@@ -1,6 +1,6 @@
 {
-  "version": "1.3.9",
+  "version": "1.4.0",
   "repo": "YaxkinCortez/GYM",
-  "fechaActualizacion": "2026-10-21",
-  "descripcion": "v1.3.9: normalizacion automatica de flags isActive/estado en la BD al arrancar (repara datos corruptos y hace que SI se acumulen los dias); app abre a pantalla completa; bloqueo por deuda verificado end-to-end"
+  "fechaActualizacion": "2026-10-22",
+  "descripcion": "v1.4.0: reinicio AUTOMATICO garantizado tras actualizar (mata todos los node.exe y relanza iniciar_gimnasio.bat desde cero, sin tocar la BD); re-autenticacion obligatoria al instalar ahora si funciona (acepta ambos juegos de nombres de campo); pantalla completa real con perfil dedicado del navegador; app abrida solo tras confirmar HTTP 200"
 }

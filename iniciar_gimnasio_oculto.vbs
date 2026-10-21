@@ -86,7 +86,11 @@ ElseIf fso.FileExists("C:\Program Files (x86)\Google\Chrome\Application\chrome.e
 End If
 
 If navegador <> "" Then
-    sh.Run """" & navegador & """ --app=""" & urlApp & """", 1, False
+    ' v1.4.0: perfil dedicado + start-fullscreen para que la app abra REALMENTE
+    ' a pantalla completa (con el perfil normal del usuario, Edge/Chrome ignora
+    ' --start-fullscreen porque reutiliza una ventana existente sin ese flag).
+    args = " --app=""" & urlApp & """ --start-fullscreen --user-data-dir=""" & carpeta & "\data\.perfil_navegador"" --no-first-run"
+    sh.Run """" & navegador & """ & args, 1, False
 Else
     sh.Run urlApp, 1, False   ' navegador predeterminado de Windows
 End If
