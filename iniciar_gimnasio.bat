@@ -199,29 +199,29 @@ set "URL_APP=http://127.0.0.1:3000/login.php"
 
 :: 1. Microsoft Edge en modo ventana app nativa (Windows 10 / Windows 11)
 if exist "%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe" (
-    start "" "%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe" --app="%URL_APP%"
+    start "" "%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe" --start-fullscreen --app="%URL_APP%"
     goto fin_lanzador
 )
 if exist "%ProgramFiles%\Microsoft\Edge\Application\msedge.exe" (
-    start "" "%ProgramFiles%\Microsoft\Edge\Application\msedge.exe" --app="%URL_APP%"
+    start "" "%ProgramFiles%\Microsoft\Edge\Application\msedge.exe" --start-fullscreen --app="%URL_APP%"
     goto fin_lanzador
 )
 if exist "%LOCALAPPDATA%\Microsoft\Edge\Application\msedge.exe" (
-    start "" "%LOCALAPPDATA%\Microsoft\Edge\Application\msedge.exe" --app="%URL_APP%"
+    start "" "%LOCALAPPDATA%\Microsoft\Edge\Application\msedge.exe" --start-fullscreen --app="%URL_APP%"
     goto fin_lanzador
 )
 
 :: 2. Google Chrome en modo ventana app nativa
 if exist "%ProgramFiles%\Google\Chrome\Application\chrome.exe" (
-    start "" "%ProgramFiles%\Google\Chrome\Application\chrome.exe" --app="%URL_APP%"
+    start "" "%ProgramFiles%\Google\Chrome\Application\chrome.exe" --start-fullscreen --app="%URL_APP%"
     goto fin_lanzador
 )
 if exist "%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe" (
-    start "" "%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe" --app="%URL_APP%"
+    start "" "%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe" --start-fullscreen --app="%URL_APP%"
     goto fin_lanzador
 )
 if exist "%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe" (
-    start "" "%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe" --app="%URL_APP%"
+    start "" "%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe" --start-fullscreen --app="%URL_APP%"
     goto fin_lanzador
 )
 

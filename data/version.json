@@ -1,6 +1,6 @@
 {
-  "version": "1.3.8",
+  "version": "1.3.9",
   "repo": "YaxkinCortez/GYM",
-  "fechaActualizacion": "2026-10-22",
-  "descripcion": "v1.3.8: FIX RAIZ acumulacion de dias (ignora flags isActive corruptos, continua del vencimiento mas lejano); bloqueo por deuda cubre BD con status/saldo inconsistentes; re-autenticacion de actualizacion valida usuario como en el login (fix falso \"credenciales incorrectas\")"
+  "fechaActualizacion": "2026-10-21",
+  "descripcion": "v1.3.9: normalizacion automatica de flags isActive/estado en la BD al arrancar (repara datos corruptos y hace que SI se acumulen los dias); app abre a pantalla completa; bloqueo por deuda verificado end-to-end"
 }

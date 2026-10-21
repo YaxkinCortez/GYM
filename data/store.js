@@ -670,5 +670,38 @@ export function cargarBaseDatos() {
   }
 }
 
+// FIX v1.3.9: NORMALIZACION AUTOMATICA DE FLAGS isActive AL CADA ARRANQUE.
+// El flag isActive se deriva SIEMPRE de las fechas reales (startDate/endDate)
+// comparadas con hoy, y se persiste en basedatos_local.json. Repara BD antiguas
+// con isActive=0 en vigencias futuras (causa del "no se acumulan los dias" y de
+// historiales que marcaban "Concluida" una membresia aun vigente).
+function normalizarFlagsMembresias() {
+  try {
+    if (Array.isArray(store.clientmemberships)) {
+      const hoyNorm = getTodayStr();
+      let cambios = 0;
+      store.clientmemberships.forEach(cm => {
+        const diasRestantes = getDaysDiff(cm.endDate, hoyNorm);
+        const inicioFuturo = getDaysDiff(hoyNorm, cm.startDate) < 0;
+        const estadoReal = diasRestantes < 0 ? 'Concluida' : (inicioFuturo ? 'Programada' : 'Vigente');
+        const flagReal = (diasRestantes >= 0 && !inicioFuturo) ? 1 : 0;
+        if ((Number(cm.isActive) || 0) !== flagReal || cm.estado !== estadoReal) {
+          cm.isActive = flagReal;
+          cm.estado = estadoReal;
+          cambios++;
+        }
+      });
+      if (cambios > 0) {
+        guardarBaseDatos();
+        console.log(`[BD Local] Normalizadas ${cambios} membresia(s): flags isActive/estado recalculados desde fechas reales.`);
+      }
+    }
+  } catch (errNorm) {
+    console.warn('[BD Local] No se pudo normalizar flags de membresias:', errNorm.message);
+  }
+}
+
 // Cargar la base de datos local al iniciar
 cargarBaseDatos();
+normalizarFlagsMembresias();
+

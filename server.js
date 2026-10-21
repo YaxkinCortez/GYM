@@ -997,13 +997,18 @@ app.post(['/clientes', '/pages/clientes.php'], requireAuth, (req, res) => {
       const padF = (n) => String(n).padStart(2, '0');
       const endDate = `${endD.getFullYear()}-${padF(endD.getMonth() + 1)}-${padF(endD.getDate())}`;
 
-      // Historial v1.3.5: SOLO las membresias ya VENCIDAS pasan a "Concluida".
-      // Las vigentes conservan su estado (la acumulacion no concluye nada por
-      // adelantado); la nueva compra queda "Vigente" si inicia hoy o
-      // "Programada" si inicia en el futuro (se activa sola al llegar su fecha,
-      // porque los listados siempre ordenan por vencimiento mas lejano).
+      // FIX v1.3.9: NORMALIZACION TOTAL DE FLAGS EN LA BD MISMA. Antes solo se
+      // marcaba inactivas las vencidas y los flags viejos corruptos de compras
+      // antiguas (isActive=0 en una vigencia futura, etc.) seguian engañando al
+      // dashboard y a otras vistas. Ahora CADA registro del socio queda con el
+      // flag coherente con sus fechas reales, guardado en basedatos_local.json.
       store.clientmemberships.forEach(cm => {
-        if (cm.clientId === clientId && getDaysDiff(cm.endDate, hoyStr) < 0) cm.isActive = 0;
+        if (cm.clientId !== clientId) return;
+        const diasCm = getDaysDiff(cm.endDate, hoyStr);
+        const inicioFuturo = getDaysDiff(hoyStr, cm.startDate) < 0;
+        if (diasCm < 0) { cm.estado = 'Concluida'; cm.isActive = 0; }
+        else if (inicioFuturo) { cm.estado = 'Programada'; cm.isActive = 0; }
+        else { cm.estado = 'Vigente'; cm.isActive = 1; }
       });
       const iniciaHoyOAntes = getDaysDiff(startISO, hoyStr) <= 0;
       const estadoNuevo = iniciaHoyOAntes ? 'Vigente' : 'Programada';
@@ -1018,6 +1023,15 @@ app.post(['/clientes', '/pages/clientes.php'], requireAuth, (req, res) => {
         estado: estadoNuevo,
         createdAt: now,
         updatedAt: now
+      });
+      // Y tras insertar la nueva, re-normalizar: la anterior vigente conserva
+      // isActive=1 hasta que venza (no se "concluye" al acumular), la nueva
+      // programada queda en 0 y se activara sola al iniciar su vigencia.
+      store.clientmemberships.forEach(cm => {
+        if (cm.clientId !== clientId) return;
+        const diasCm = getDaysDiff(cm.endDate, hoyStr);
+        const inicioFuturo = getDaysDiff(hoyStr, cm.startDate) < 0;
+        cm.isActive = (diasCm >= 0 && !inicioFuturo) ? 1 : 0;
       });
 
       store.membership_sales.push({
