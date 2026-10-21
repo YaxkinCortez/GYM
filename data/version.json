@@ -1,5 +1,5 @@
 {
-  "version": "1.3.5",
+  "version": "1.3.6",
   "repo": "YaxkinCortez/GYM",
   "fechaActualizacion": "2026-10-22",
   "descripcion": "Fechas latino dd/mm/aaaa en todo el sistema, correccion del dia 'un dia atras' (UTC), acumulacion real de membresias sin concluir la vigente (estado Programada)"

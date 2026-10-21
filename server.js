@@ -848,15 +848,26 @@ app.post(['/clientes', '/pages/clientes.php'], requireAuth, (req, res) => {
       .sort((a, b) => b.endDate.localeCompare(a.endDate))
       .map(cm => {
         const m = store.memberships.find(plan => plan.id === cm.membershipId);
+        const dias = getDaysDiff(cm.endDate, today);
+        // v1.3.6: estado SIEMPRE derivado de las fechas reales (no del flag
+        // isActive/estado guardado), para que el modal nunca muestre "Concluida"
+        // a una membresía vigente acumulada.
+        let est = 'Vigente';
+        if (dias < 0) est = 'Concluida';
+        else if (getDaysDiff(today, cm.startDate) < 0) est = 'Programada';
         return {
           ...cm,
           membership_name: m ? m.name : 'Plan',
           cost: m ? m.cost : 0,
           durationDays: m ? m.durationDays : 30,
-          dias_restantes: getDaysDiff(cm.endDate, today)
+          dias_restantes: dias,
+          estado: est,
+          isActive: dias >= 0 ? 1 : 0
         };
       });
 
+    // v1.3.6: "actual" = la de vencimiento mas lejano si aun no vence; si ya
+    // vencio todo, se muestra igual con estado Concluida.
     const cmActual = cms[0] || null;
     const deudas = store.client_debts.filter(d => d.clientId === cId);
     const abonos = store.debt_payments.filter(p => p.clientId === cId);
@@ -1559,13 +1570,23 @@ app.get(['/historial_ventas', '/pages/historial_ventas.php'], requireAuth, (req,
 // HISTORIAL MEMBRESIAS
 // ========================
 app.get(['/historial_membresias', '/pages/historial_membresias.php'], requireAuth, (req, res) => {
+  const hoyHist = getTodayStr();
   const historial = store.clientmemberships.map(cm => {
     const client = store.clients.find(c => c.id === cm.clientId);
     const plan = store.memberships.find(m => m.id === cm.membershipId);
+    // v1.3.6: estado derivado de fechas reales (Vigente/Programada/Concluida),
+    // nunca del flag guardado — una acumulada vigente ya no aparece "Concluida".
+    const dias = getDaysDiff(cm.endDate, hoyHist);
+    let estado;
+    if (dias < 0) estado = 'Concluida';
+    else if (getDaysDiff(hoyHist, cm.startDate) < 0) estado = 'Programada';
+    else estado = 'Vigente';
     return {
       ...cm,
       fullName: client ? client.fullName : 'Socio',
-      plan: plan ? plan.name : 'Plan'
+      plan: plan ? plan.name : 'Plan',
+      estado,
+      isActive: dias >= 0 ? 1 : 0
     };
   }).reverse();
 
@@ -1988,13 +2009,20 @@ app.post(['/actualizaciones', '/pages/actualizaciones.php'], requireAdmin, async
       u => u.id === (sesionUsuario ? sesionUsuario.id : -1) &&
            ((u.name || '').toLowerCase() === confirmarUsuario.toLowerCase() ||
             (u.email || '').toLowerCase() === confirmarUsuario.toLowerCase()) &&
-           u.password === confirmarPassword
+           String(u.password) === String(confirmarPassword)
     );
     if (!usuarioValido) {
       return res.redirect(
         '/pages/actualizaciones.php?msg=' + encodeURIComponent('Instalacion cancelada: usuario o contraseña incorrectos. Solo el usuario autenticado puede confirmar una actualización.') + '&msg_type=danger'
       );
     }
+
+    // v1.3.6 DIAGNOSTICO EN LOG: registrar intento de instalacion (sin datos
+    // sensibles) para poder auditar desde arranque.log quien confirmo y cuando.
+    try {
+      fs.appendFileSync(path.join(__dirname, 'data', 'arranque.log'),
+        `[${new Date().toISOString()}] [ACTUALIZAR] Instalacion confirmada por usuario id ${usuarioValido.id} (${usuarioValido.name}) -> v${actualizacion.version}\r\n`, 'utf-8');
+    } catch (_) {}
 
     // Cerrar sesion ANTES de tocar cualquier archivo (queda invalidada aunque
     // la instalacion falle a medias).

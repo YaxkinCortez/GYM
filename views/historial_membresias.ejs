@@ -35,8 +35,9 @@
                                         <td><%= F(h.startDate) %></td>
                                         <td><%= F(h.endDate) %></td>
                                         <td>
-                                            <span class="badge <%= h.isActive ? 'bg-success' : 'bg-secondary' %>">
-                                                <%= h.isActive ? 'Vigente' : 'Concluida' %>
+                                            <% var estH = h.estado || (h.isActive ? 'Vigente' : 'Concluida'); %>
+                                            <span class="badge <%= estH === 'Vigente' ? 'bg-success' : (estH === 'Programada' ? 'bg-info text-dark' : 'bg-secondary') %>">
+                                                <%= estH %>
                                             </span>
                                         </td>
                                     </tr>
