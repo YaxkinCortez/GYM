@@ -3,9 +3,9 @@ import session from 'express-session';
 import cookieParser from 'cookie-parser';
 import path from 'path';
 import fs from 'fs';
-import { spawn, execSync } from 'child_process';
+import { spawn, spawnSync, execSync } from 'child_process';
 import http from 'http';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import AdmZip from 'adm-zip';
 import {
   store,
@@ -114,11 +114,19 @@ function relanzarServidor(motivo = 'actualización instalada') {
     cwd: __dirname,
     detached: true,
     stdio: 'ignore',
-    // GF_TOKEN_ARRANQUE: el proceso nuevo hereda el token del actual para que
-    // el reinicio por actualizacion NO cierre la sesion del usuario. En un
-    // arranque desde cero (sin esta variable) server.js lee data/.token_arranque
-    // y habra que volver a iniciar sesion, como corresponde.
-    env: { ...process.env, GF_RELANZADO: '1', GF_REINTENTO: String(reintento), GF_TOKEN_ARRANQUE: TOKEN_ARRANQUE }
+    // GF_TOKEN_ARRANQUE: en un reinicio MANUAL (sin instalación) el proceso
+    // nuevo hereda el token y la sesión sobrevive. PERO si existe el marcador
+    // de instalación pendiente (acabamos de instalar una actualización desde
+    // la webapp), NO se hereda ni se borra data/.token_arranque: el proceso
+    // nuevo generará token limpio => la sesión anterior queda CERRADA y hay
+    // que volver a iniciar sesión con la nueva versión (v1.3.1).
+    env: (() => {
+      const envHijo = { ...process.env, GF_RELANZADO: '1', GF_REINTENTO: String(reintento) };
+      if (!fs.existsSync(RUTA_MARCADOR_REINICIO)) {
+        envHijo.GF_TOKEN_ARRANQUE = TOKEN_ARRANQUE;
+      }
+      return envHijo;
+    })()
   };
   const hijo = process.platform === 'win32'
     ? spawn(process.execPath, [__filename, ...args], opcionesHijo)
@@ -254,8 +262,66 @@ app.use(
 // session.destroy() impide que Express vuelva a emitir cookie de sesion y
 // se provoca un bucle infinito de redirecciones (ERR_TOO_MANY_REDIRECTS:
 // "No se puede obtener acceso a esta página").
-import { obtenerOCrearTokenArranque } from './data/arranqueToken.js';
+import { obtenerOCrearTokenArranque, generarTokenArranque } from './data/arranqueToken.js';
 const TOKEN_ARRANQUE = process.env.GF_TOKEN_ARRANQUE || obtenerOCrearTokenArranque();
+
+// ======================== MATAR PROCESOS NODE PROPIOS (v1.3.1) ========================
+// Tras instalar una actualización desde la webapp, cualquier proceso Node del
+// proyecto que haya quedado zombie (ventanas cerradas a medias, relanzamientos
+// anteriores) dejaría el puerto 3000 ocupado por código VIEJO: el navegador
+// seguiría usando la versión anterior aunque la nueva estuviera instalada.
+// Solo se terminan procesos cuyo comando incluye server.js o
+// comprobar_y_actualizar.js de ESTA carpeta — nunca un Node ajeno al sistema.
+function matarProcesosNodePropios() {
+  try {
+    if (process.platform === 'win32') {
+      const out = execSync(
+        'wmic process where "name=\'node.exe\'" get ProcessId,CommandLine /format:list',
+        { encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] }
+      );
+      const bloques = out.split(/\r?\n\r?\n/);
+      const miPid = String(process.pid);
+      for (const bloque of bloques) {
+        if (!/server\.js|comprobar_y_actualizar\.js/i.test(bloque)) continue;
+        if (!bloque.includes(__dirname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))) continue;
+        const m = bloque.match(/ProcessId=(\d+)/i);
+        if (!m || m[1] === miPid) continue;
+        try { execSync(`taskkill /F /PID ${m[1]} /T`, { stdio: 'ignore', windowsHide: true }); } catch (_) {}
+      }
+    } else {
+      const out = execSync('ps -eo pid,args', { encoding: 'utf8' });
+      const miPid = String(process.pid);
+      for (const linea of out.split('\n')) {
+        if (!/node.*(server\.js|comprobar_y_actualizar\.js)/.test(linea)) continue;
+        if (!linea.includes(__dirname)) continue;
+        const pid = linea.trim().split(/\s+/)[0];
+        if (pid === miPid) continue;
+        try { process.kill(parseInt(pid, 10), 'SIGKILL'); } catch (_) {}
+      }
+    }
+    console.log('[LIMPIEZA] Procesos Node zombies del proyecto terminados (si existían).');
+  } catch (err) {
+    // wmic ya no existe en Windows 11 24H2+: usar PowerShell como respaldo.
+    try {
+      const out = execSync(
+        'powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \\"Name=\'node.exe\'\\" | Select-Object ProcessId,CommandLine | ConvertTo-Csv -NoTypeInformation"',
+        { encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] }
+      );
+      const miPid = String(process.pid);
+      for (const linea of out.split(/\r?\n/)) {
+        if (!/server\.js|comprobar_y_actualizar\.js/i.test(linea)) continue;
+        if (!linea.includes(__dirname)) continue;
+        const m = linea.match(/^"?(\d+)"?,/);
+        if (!m || m[1] === miPid) continue;
+        try { execSync(`taskkill /F /PID ${m[1]} /T`, { stdio: 'ignore', windowsHide: true }); } catch (_) {}
+      }
+      console.log('[LIMPIEZA] (PowerShell) Procesos Node zombies revisados.');
+    } catch (_) {
+      console.warn('[LIMPIEZA] No fue posible enumerar procesos Node:', err.message);
+    }
+  }
+}
+
 
 app.use((req, res, next) => {
   const sesion = req.session;
@@ -1706,16 +1772,13 @@ async function consultarGitHub(repo) {
   }
 }
 
-// MODO LOCAL (v1.3.0): la página de actualizaciones ya NO consulta GitHub ni
-// ofrece descargas. Solo muestra la versión local y el historial. Las acciones
-// antiguas (comprobar_ahora / simular / instalar) se responden con un aviso.
-const AVISO_MODO_LOCAL = 'ℹ️ Modo local activo: las actualizaciones automáticas por GitHub fueron desactivadas en la v1.3.0. El sistema funciona 100% offline.';
 
 app.get(['/actualizaciones', '/pages/actualizaciones.php'], requireAdmin, (req, res) => {
   const updater = store.sistema_actualizaciones;
   updater.versionActual = obtenerVersionLocal();
-  // En modo local nunca hay actualización pendiente "disponible".
-  updater.actualizacionDisponible = null;
+  // v1.3.1: la pagina vuelve a poder consultar GitHub BAJO DEMANDA (boton).
+  // El arranque del .bat sigue 100% offline: aqui solo se muestran los datos
+  // que el administrador haya consultado en esta sesión.
 
   const historial = store.historial_actualizaciones.slice().reverse();
   const totalClientes = store.clients.length;
@@ -1728,7 +1791,7 @@ app.get(['/actualizaciones', '/pages/actualizaciones.php'], requireAdmin, (req, 
     tipo_mensaje: req.query.msg_type || 'success',
     updater,
     banderaBatActiva: false,
-    modoLocal: true,
+    modoLocal: false,
     historial,
     totalClientes,
     totalVentas,
@@ -1748,117 +1811,60 @@ app.post(['/actualizaciones', '/pages/actualizaciones.php'], requireAdmin, async
     return res.redirect(req.headers.referer || '/pages/dashboard.php');
   }
 
-  // Acciones heredadas del modo GitHub: desactivadas en modo local.
-  if (['comprobar_ahora', 'simular_nueva_version', 'simular_para_bat', 'instalar_actualizacion'].includes(accion)) {
-    return res.redirect(
-      '/pages/actualizaciones.php?msg=' + encodeURIComponent(AVISO_MODO_LOCAL) + '&msg_type=info'
-    );
-  }
-
-  if (false && accion === 'comprobar_ahora') { // eslint-disable-line — código antiguo conservado como referencia (modo GitHub desactivado)
+  // v1.3.1: la pagina "Estado del Sistema" VOLVIO a consultar GitHub bajo
+  // demanda (boton "Buscar actualizaciones"). El ARRANQUE sigue 100% offline:
+  // iniciar_gimnasio.bat nunca consulta la red; solo se conecta a GitHub
+  // cuando el administrador pulsa el boton o instala una actualizacion.
+  if (accion === 'comprobar_ahora') {
     updater.ultimaComprobacion = now;
     const resultado = await consultarGitHub(updater.repo);
 
     if (resultado && resultado.offline) {
       return res.redirect(
         '/pages/actualizaciones.php?msg=' +
-          encodeURIComponent('ℹ️ Modo sin conexión: No se detectó acceso a Internet en este momento. La comprobación se ha saltado y puedes seguir utilizando todo el software con normalidad.') +
-          '&msg_type=info'
+          encodeURIComponent('No hay conexion a Internet en este momento. Puedes seguir usando todo el sistema con normalidad; intentalo de nuevo mas tarde.') +
+          '&msg_type=warning'
       );
     }
 
     if (resultado && resultado.version) {
       const diff = compararVersiones(resultado.version, versionLocal);
       if (diff > 0) {
-        // La versión remota es ESTRICTAMENTE MAYOR
         updater.actualizacionDisponible = {
           version: resultado.version,
           descripcion: resultado.descripcion,
           fecha: resultado.fecha,
           url: resultado.url
         };
-        updater.alertaNotificacion = {
-          tipo: 'info',
-          titulo: 'Actualización Disponible',
-          mensaje: `Se ha detectado una nueva versión en GitHub (${resultado.version}). Puedes instalarla manteniendo todos tus datos seguros.`
-        };
         return res.redirect(
           '/pages/actualizaciones.php?msg=' +
-            encodeURIComponent(`🔔 ¡Nueva versión detectada en GitHub: ${resultado.version}!`) +
+            encodeURIComponent('Nueva version disponible en GitHub: ' + resultado.version + ' (la tuya es ' + versionLocal + '). Pulsa "Descargar e Instalar Ahora" para actualizar sin perder tus datos.') +
             '&msg_type=warning'
         );
       } else {
-        // La versión local es mayor o igual. No descargar para no retroceder
         updater.actualizacionDisponible = null;
         const msgTexto = diff < 0
-          ? `🛡️ Protección anti-retrocesos activa: Tu versión local (${versionLocal}) es superior a la de GitHub (${resultado.version}). No se requiere ninguna descarga para evitar un retroceso.`
-          : `✅ Tu sistema está al día con la última versión (${versionLocal}).`;
+          ? 'Proteccion anti-retrocesos: tu version local (' + versionLocal + ') es SUPERIOR a la de GitHub (' + resultado.version + '). No se descargara nada.'
+          : 'Tu sistema esta AL DIA: version local ' + versionLocal + ' = ultima version de GitHub.';
         return res.redirect(
           '/pages/actualizaciones.php?msg=' + encodeURIComponent(msgTexto) + '&msg_type=success'
         );
       }
     } else if (resultado && resultado.tipo === 'sin_version') {
-      // El último commit de GitHub no es una versión numérica instalable
-      // (p. ej. "build-ecd6395"). NO ofrecer descarga: solo informar.
       updater.actualizacionDisponible = null;
       return res.redirect(
         '/pages/actualizaciones.php?msg=' +
-          encodeURIComponent(`✅ Tu sistema está al día (${versionLocal}). ${resultado.descripcion}`) +
+          encodeURIComponent('Sistema al dia (' + versionLocal + '). ' + (resultado.descripcion || '')) +
           '&msg_type=success'
       );
     } else {
       updater.actualizacionDisponible = null;
       return res.redirect(
         '/pages/actualizaciones.php?msg=' +
-          encodeURIComponent(`✅ Tu sistema cuenta con la versión más reciente (${versionLocal}).`) +
+          encodeURIComponent('Sistema al dia (' + versionLocal + '). No se detectaron versiones nuevas en GitHub.') +
           '&msg_type=success'
       );
     }
-  }
-
-  if (accion === 'simular_nueva_version') {
-    // Generar siguiente versión según regla personalizada: 1.0.2 -> 1.0.3, 1.1.9 -> 1.2.0, 1.9.9 -> 2.0.0
-    const nuevaVer = incrementarVersion(versionLocal);
-
-    updater.ultimaComprobacion = now;
-    updater.actualizacionDisponible = {
-      version: nuevaVer,
-      descripcion: 'Actualización incremental calculada: ' + nuevaVer,
-      fecha: now,
-      url: `https://github.com/${updater.repo}`
-    };
-    updater.alertaNotificacion = {
-      tipo: 'info',
-      titulo: 'Nueva Versión Detectada',
-      mensaje: `Nueva versión ${nuevaVer} lista para comprobar el ciclo de actualización.`
-    };
-    return res.redirect(
-      '/pages/actualizaciones.php?msg=' +
-        encodeURIComponent(`Simulación incremental activada: se ha detectado la versión ${nuevaVer}.`) +
-        '&msg_type=warning'
-    );
-  }
-
-  if (accion === 'simular_para_bat') {
-    const flagPath = path.join(__dirname, 'data', 'simular_actualizacion.flag');
-    fs.writeFileSync(flagPath, '1', 'utf-8');
-    return res.redirect(
-      '/pages/actualizaciones.php?msg=' +
-        encodeURIComponent('⚙️ Simulación programada. Al ejecutar iniciar_gimnasio.bat (o iniciar_gimnasio.sh), detectará la nueva versión, la descargará e instalará sin tocar tu base de datos y se relanzará automáticamente.') +
-        '&msg_type=info'
-    );
-  }
-
-  if (accion === 'cancelar_simulacion_bat') {
-    const flagPath = path.join(__dirname, 'data', 'simular_actualizacion.flag');
-    if (fs.existsSync(flagPath)) {
-      try { fs.unlinkSync(flagPath); } catch (_) {}
-    }
-    return res.redirect(
-      '/pages/actualizaciones.php?msg=' +
-        encodeURIComponent('✅ Simulación de iniciar_gimnasio.bat cancelada.') +
-        '&msg_type=success'
-    );
   }
 
   if (accion === 'instalar_actualizacion') {
@@ -1895,18 +1901,38 @@ app.post(['/actualizaciones', '/pages/actualizaciones.php'], requireAdmin, async
       snapshot
     });
 
-    // 2. APLICAR ACTUALIZACIÓN (solo en la web local: NO hay descarga .zip)
-    const versionAnterior = updater.versionActual;
+    // 2. DESCARGAR E INSTALAR desde GitHub (v1.3.1). Se invoca el mismo
+    // instalador probado del lanzador (comprobar_y_actualizar.js) con el modo
+    // --web-actualizar: descarga el zip de main, respalda la base de datos,
+    // copia archivos protegiendo basedatos_local.json / version.json /
+    // .token_arranque y deja el marcador reiniciar_pendiente.flag si se
+    // reemplazaron archivos del servidor. El arranque del .bat sigue offline;
+    // la red solo se usa cuando el administrador pulsa este boton.
+    try {
+      fs.writeFileSync(path.join(__dirname, 'data', 'instalacion_web.log'), '', 'utf-8');
+    } catch (_) {}
+    const salidaInstalador = spawnSync(
+      process.execPath,
+      [path.join(__dirname, 'comprobar_y_actualizar.js'), '--web-actualizar', '--sin-token-nuevo'],
+      {
+        cwd: __dirname,
+        encoding: 'utf8',
+        timeout: 150000,
+        env: { ...process.env, GF_ALREADY_RAN: '1', GF_SIN_REINTENTO_WEB: '1' },
+        windowsHide: true
+      }
+    );
+    const logInstalacion = ((salidaInstalador.stdout || '') + '\n' + (salidaInstalador.stderr || ''));
+    try {
+      fs.appendFileSync(path.join(__dirname, 'data', 'instalacion_web.log'),
+        `\r\n===== [${new Date().toISOString()}] Instalacion web =====\r\n${logInstalacion}\r\n`, 'utf-8');
+    } catch (_) {}
 
-    // Proteccion anti-retrocesos: si por datos residuales del estado llegara
-    // una "actualizacion" con version IGUAL o INFERIOR a la instalada, no
-    // instalar nada (eso era lo que permitia el bucle de re-descargas).
-    if (compararVersiones(actualizacion.version, versionLocal) <= 0) {
-      updater.actualizacionDisponible = null;
+    if (salidaInstalador.error || (salidaInstalador.status !== 0 && salidaInstalador.status !== null)) {
       return res.redirect(
         '/pages/actualizaciones.php?msg=' +
-          encodeURIComponent(`🛡️ No se instaló nada: la versión pendiente (${actualizacion.version}) no es superior a la instalada (${versionLocal}).`) +
-          '&msg_type=info'
+          encodeURIComponent('No se pudo completar la instalacion (codigo ' + (salidaInstalador.status ?? 'error') + '). Revisa data\\instalacion_web.log. Tu base de datos permanece intacta.') +
+          '&msg_type=danger'
       );
     }
 
@@ -1939,6 +1965,10 @@ app.post(['/actualizaciones', '/pages/actualizaciones.php'], requireAdmin, async
     });
 
     // Regenerar el archivo zip del proyecto actualizado
+    // v1.3.1: eliminar cualquier proceso Node zombie del proyecto para que
+    // el navegador no quede hablando con el servidor viejo tras el reinicio.
+    matarProcesosNodePropios();
+
     generarZipProyecto();
 
     // 3. GENERAR ALERTA VISIBLE PARA EL USUARIO
