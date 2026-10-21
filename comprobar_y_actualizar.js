@@ -845,51 +845,28 @@ function lanzarServidorLocal() {
       // `>>` jamas escribia nada. Ahora el comando vive en un archivo .bat
       // aparte generado por Node y TODA la salida del servidor se duplica al
       // log desde el propio proceso Node via pipes (independiente de cmd).
-      const rutaBatLanzador = path.join(__dirname, 'data', 'lanzar_servidor.bat');
-      const lineasBat = [
-        '@echo off',
-        'title Gimnasio La Fabrica - Servidor',
-        `cd /d "${__dirname}"`,
-        `echo ===== [VENTANA DEL SERVIDOR ABIERTA ${new Date().toISOString()}] =====`,
-        `echo Node usado: ${process.execPath}`,
-        `"${process.execPath}" "${rutaServer}"`,
-        'set SERVIDOR_CODIGO=%ERRORLEVEL%',
-        'echo.',
-        `echo [SERVIDOR TERMINO con codigo %SERVIDOR_CODIGO%]. Si la app no abre, revise data\arranque.log`,
-        'pause'
-      ];
-      try { fs.writeFileSync(rutaBatLanzador, lineasBat.join('\r\n') + '\r\n'); } catch (_) {}
-      let hijoVentana = null;
+      // FIX v1.3.3 (ventana cmd visible que mataba la app al cerrarla): antes
+      // se hacia spawn('cmd.exe', ...) y si ese cmd moria (o el usuario cerraba
+      // su consola), el servidor node hijo moria con el -> "no se puede obtener
+      // acceso". Ahora el servidor se lanza como PROCESO NODE DIRECTO, detached,
+      // con stdout/stderr apuntando a un file descriptor de data\arranque.log y
+      // unref(): desvinculado de cualquier consola, sin cmd intermedio, invisible
+      // para el cliente. Todo queda registrado en arranque.log igualmente.
       try {
-        hijoVentana = spawn('cmd.exe', ['/c', rutaBatLanzador], {
+        const fdLog = fs.openSync(rutaLog, 'a');
+        const hijoServidor = spawn(process.execPath, [rutaServer], {
           detached: true,
           cwd: __dirname,
-          stdio: ['ignore', 'pipe', 'pipe'],
-          windowsHide: false
+          stdio: ['ignore', fdLog, fdLog],
+          windowsHide: true
         });
-      } catch (_) {}
-      if (hijoVentana) {
-        // Duplicar stdout/stderr del servidor a arranque.log DESDE Node: aunque
-        // cmd falle o el redirect se rompa, el error real queda registrado.
-        const registrar = (chunk) => {
-          try { fs.appendFileSync(rutaLog, String(chunk)); } catch (_) {}
-        };
-        hijoVentana.stdout.on('data', registrar);
-        hijoVentana.stderr.on('data', registrar);
-        hijoVentana.on('error', (errH) => registrar(`[ERROR lanzando ventana del servidor] ${errH.message}\n`));
-        hijoVentana.unref();
-      } else {
-        // Ultimo recurso sin cmd: lanzar node directamente con log por pipe.
-        const hijoDirecto = spawn(process.execPath, [rutaServer], {
-          detached: true, cwd: __dirname, stdio: ['ignore', 'pipe', 'pipe']
+        hijoServidor.on('error', (errH) => {
+          try { fs.appendFileSync(rutaLog, `[ERROR servidor directo] ${errH.message}\n`); } catch (_) {}
         });
-        const registrar2 = (chunk) => {
-          try { fs.appendFileSync(rutaLog, String(chunk)); } catch (_) {}
-        };
-        hijoDirecto.stdout.on('data', registrar2);
-        hijoDirecto.stderr.on('data', registrar2);
-        hijoDirecto.on('error', (errH) => registrar2(`[ERROR servidor directo] ${errH.message}\n`));
-        hijoDirecto.unref();
+        hijoServidor.unref();
+        try { fs.closeSync(fdLog); } catch (_) {}
+      } catch (errSpawn) {
+        try { fs.appendFileSync(rutaLog, `[ERROR lanzando servidor] ${errSpawn.message}\n`); } catch (_) {}
       }
     } else {
       const logStream = fs.openSync(path.join(os.tmpdir(), 'gimnasio_server.log'), 'a');

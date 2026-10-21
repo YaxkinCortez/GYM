@@ -31,3 +31,5 @@ data/iniciar.log
 data/arranque.log
 data/servidor_ventana.bat
 data/lanzar_servidor.bat
+data/_lanzador_interno.flag
+data/servidor_oculto.vbs

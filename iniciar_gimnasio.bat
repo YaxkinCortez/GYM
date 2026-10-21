@@ -10,29 +10,26 @@ title Gimnasio La Fabrica - Gestor de Inicio
 cd /d "%~dp0"
 if not exist "%~dp0data" mkdir "%~dp0data"
 set "GF_LOGFILE=%~dp0data\iniciar.log"
+set "GF_ARRANQUE=%~dp0data\arranque.log"
 
-:: IMPORTANTE (fix ventana que se cierra): el truco anterior de "tee" con
-:: PowerShell relanzaba el .bat dentro de una sesion oculta; cuando ese
-:: relanzamiento fallaba, la ventana moria al instante sin mostrar NADA y el
-:: log no se creaba. Estructura nueva, a prueba de fallos:
-::   - El lanzador corre DIRECTAMENTE en esta ventana visible (sin tee externo).
-::   - Cada paso escribe sus propias lineas en data\iniciar.log (append nativo),
-::     ademas de mostrarlas en pantalla. Sin cscript, sin PowerShell, sin
-::     comillas raras: nada de eso puede matar la ventana.
-::   - La ventana NUNCA termina sin pasar por `pause` (tanto al terminar bien
-::     como ante error de Node).
-if not exist "%~dp0data" mkdir "%~dp0data"
+:: ============================================================================
+::  v1.3.3 - CERO CONSOLAS QUE EL CLIENTE PUEDA CERRAR
+::  Antes `start "" /MIN cmd.exe ...` dejaba una consola visible (minimizada);
+::  si el usuario la cerraba, moria el servidor -> "no se puede obtener acceso".
+::  Ahora el servidor node se lanza con WScript.Shell.Run(...,0,...): ventana
+::  TOTALMENTE oculta que no existe para el usuario. Nada que cerrar. Todo el
+::  registro queda en data\arranque.log e data\iniciar.log.
+:: ============================================================================
 
 :: 1. Garantizar rutas del sistema en el PATH
 set "PATH=%SystemRoot%\system32;%SystemRoot%;%SystemRoot%\System32\Wbem;%SystemRoot%\System32\WindowsPowerShell\v1.0\;%~dp0nodejs;%~dp0;%PATH%"
 
-cls
+:: (sin cls: en Windows Terminal "cls" abre una consola visible; no es necesario)
 echo ===============================================================================
 echo                GIMNASIO LA FABRICA - SISTEMA INTEGRAL Y POS
 echo ===============================================================================
 >>"%GF_LOGFILE%" echo ===== [LANZADOR] %DATE% %TIME% =====
-set "GF_ARRANQUE=%~dp0data\arranque.log"
->>"%GF_ARRANQUE%" echo ===== [LANZADOR .BAT INICIADO] %DATE% %TIME% =====
+>>"%GF_ARRANQUE%" echo ===== [LANZADOR INICIADO] %DATE% %TIME% =====
 
 :: 2. Deteccion robusta de Node.js (Prioriza la version portable local para funcionar 100%% sin Internet)
 set "NODE_CMD="
@@ -123,21 +120,16 @@ if not errorlevel 1 (
     goto verificar_http
 )
 
-:: Lanzar server.js EN SEGUNDO PLANO (oculto, sin ventana para el cliente).
-:: v1.3.2: toda la consola del servidor se redirige a data\arranque.log via el
-:: .bat auxiliar; ademas server.js duplica su propia salida al mismo log. El
-:: proceso vive desvinculado de esta ventana y solo se ve en el Administrador
-:: de tareas si alguien lo busca. Si algo falla, el diagnostico queda en los
-:: logs y esta ventana muestra la explicacion con pausa.
-set "BAT_SERVIDOR=%~dp0data\servidor_ventana.bat"
->"%BAT_SERVIDOR%" echo @echo off
->>"%BAT_SERVIDOR%" echo cd /d "%~dp0"
->>"%BAT_SERVIDOR%" echo echo ===== [SERVIDOR SEGUNDO PLANO] %DATE% %TIME% ===== ^>^> "%GF_ARRANQUE%"
->>"%BAT_SERVIDOR%" echo "%NODE_CMD%" "%~dp0server.js" ^>^> "%GF_ARRANQUE%" 2^>^&1
->>"%BAT_SERVIDOR%" echo set CODIGO=!ERRORLEVEL!
->>"%BAT_SERVIDOR%" echo echo [SERVIDOR TERMINO codigo !CODIGO!] %DATE% %TIME% ^>^> "%GF_ARRANQUE%"
-start "" /MIN "%COMSPEC%" /c "%BAT_SERVIDOR%"
->>"%GF_LOGFILE%" echo [LANZADOR] Servidor lanzado en segundo plano (sin ventanas visibles) %DATE% %TIME%
+:: Lanzar server.js en segundo plano REAL: node.exe con ventana OCULTA (0) y
+:: salida redirigida a data\arranque.log. Desvinculado de cualquier consola:
+:: no hay nada que el cliente pueda cerrar por accidente.
+set "VBS_SERVIDOR=%~dp0data\servidor_oculto.vbs"
+>"%VBS_SERVIDOR%" echo Set sh = CreateObject("WScript.Shell")
+>>"%VBS_SERVIDOR%" echo sh.CurrentDirectory = "%~dp0."
+>>"%VBS_SERVIDOR%" echo sh.Run """%NODE_CMD%"" ""%~dp0server.js"" ^>^> ""%GF_ARRANQUE%"" 2^>^&1", 0, False
+wscript.exe //nologo "%VBS_SERVIDOR%"
+>>"%GF_LOGFILE%" echo [LANZADOR] Servidor lanzado en segundo plano REAL via VBS oculto (sin consolas) %DATE% %TIME%
+>>"%GF_ARRANQUE%" echo [LANZADOR] Servidor lanzado en segundo plano REAL via VBS oculto %DATE% %TIME%
 
 :verificar_http
 :: Esperar a que el puerto 3000 escuche (max ~15s) y luego verificar respuesta
