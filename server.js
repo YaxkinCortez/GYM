@@ -786,8 +786,19 @@ app.get(['/clientes', '/pages/clientes.php'], requireAuth, (req, res) => {
       }
     }
 
-    const deudas = store.client_debts.filter(d => d.clientId === c.id && d.status !== 'liquidada');
-    const deudaTotal = deudas.reduce((acc, d) => acc + (Number(d.remainingAmount) || 0), 0);
+    // FIX v1.3.8: una deuda se considera pendiente por ESTADO o por SALDO > 0.
+    // BD antiguas quedaron con status desactualizado ('parcial'/'pendiente' con
+    // saldo 0, o incluso 'liquidada' con saldo > 0), lo que hacía que el bloqueo
+    // por deuda no disparara aunque el socio tuviera dinero pendiente.
+    // FIX v1.3.8: una deuda esta pendiente por SALDO > 0 o por ESTADO no
+    // liquidado. El monto mostrado usa el saldo real; si el saldo registro 0
+    // pero el estado sigue pendiente (BD corrupta antigua), se muestra la
+    // suma original para que el bloqueo sea coherente con lo que ve el usuario.
+    const deudasPendientesC = store.client_debts.filter(d => d.clientId === c.id && ((Number(d.remainingAmount) || 0) > 0.001 || d.status !== 'liquidada'));
+    let deudaTotal = deudasPendientesC.reduce((acc, d) => acc + Math.max(0, Number(d.remainingAmount) || 0), 0);
+    if (deudaTotal <= 0.001 && deudasPendientesC.length > 0) {
+      deudaTotal = deudasPendientesC.reduce((acc, d) => acc + (Number(d.totalAmount) || 0), 0);
+    }
 
     return {
       ...c,
@@ -932,11 +943,15 @@ app.post(['/clientes', '/pages/clientes.php'], requireAuth, (req, res) => {
     // a ISO yyyy-mm-dd aqui (se guarda en BD y se muestra al usuario en dd/mm/aaaa).
     const startDate = (req.body.startDate || today).slice(0, 10);
 
-    // FIX v1.3.7 (RESTAURADA): BLOQUEO POR DEUDA PENDIENTE. Si el socio tiene
-    // deudas sin liquidar NO puede adquirir membresias hasta cubrirlas.
-    const deudaPendienteCliente = store.client_debts
-      .filter(d => d.clientId === clientId && d.status !== 'liquidada')
-      .reduce((s, d) => s + (Number(d.remainingAmount) || 0), 0);
+    // FIX v1.3.8 (RESTAURADA Y ROBUSTECIDA): BLOQUEO POR DEUDA PENDIENTE. Se
+    // considera pendiente por ESTADO o por SALDO > 0 (BD antiguas con status
+    // desactualizado ya no se "escapan" del bloqueo).
+    const deudasPendientesCliente = store.client_debts
+      .filter(d => d.clientId === clientId && ((Number(d.remainingAmount) || 0) > 0.001 || d.status !== 'liquidada'));
+    let deudaPendienteCliente = deudasPendientesCliente.reduce((s, d) => s + Math.max(0, Number(d.remainingAmount) || 0), 0);
+    if (deudaPendienteCliente <= 0.001 && deudasPendientesCliente.length > 0) {
+      deudaPendienteCliente = deudasPendientesCliente.reduce((s, d) => s + (Number(d.totalAmount) || 0), 0);
+    }
     if (deudaPendienteCliente > 0.001) {
       return res.redirect(
         '/pages/clientes.php?msg=' + encodeURIComponent(`⛔ No se puede asignar la membresía: el socio tiene una deuda pendiente de $${deudaPendienteCliente.toFixed(2)}. Debe liquidarla primero en la sección de Abonos.`) + '&msg_type=danger'
@@ -954,13 +969,18 @@ app.post(['/clientes', '/pages/clientes.php'], requireAuth, (req, res) => {
       // plan de 30 -> la anterior sigue Vigente hasta el 25/10 y la nueva inicia
       // el 26/10 y vence el 24/11 (33 dias de vigencia total desde hoy).
       const hoyStr = today;
-      const vigentes = store.clientmemberships
+      // FIX v1.3.8: se busca la membresia con VENCIMIENTO MAS LEJANO futuro, sin
+      // importar su flag isActive/estado. Causa raiz del "no suma dias": las
+      // compras hechas por el modal antiguo ponian isActive=0 a TODAS las
+      // anteriores (incluida la vigente), y el filtro por estado ya no
+      // encontraba ninguna vigente -> la nueva iniciaba hoy en vez de acumular.
+      const futuras = store.clientmemberships
         .filter(cm => cm.clientId === clientId && getDaysDiff(cm.endDate, hoyStr) >= 0)
         .sort((a, b) => (a.endDate < b.endDate ? 1 : -1)); // la de vencimiento mas lejano primero
       let startD;
       let startISO = startDate;
-      if (vigentes.length > 0) {
-        const ultimaVigente = vigentes[0];
+      if (futuras.length > 0) {
+        const ultimaVigente = futuras[0];
         // Continuar desde el dia despues del vencimiento actual para no perder ni un dia
         const baseD = parseFechaLocal(ultimaVigente.endDate);
         baseD.setDate(baseD.getDate() + 1);
@@ -2016,11 +2036,19 @@ app.post(['/actualizaciones', '/pages/actualizaciones.php'], requireAdmin, async
     const confirmarUsuario = (req.body.confirmar_usuario || '').trim();
     const confirmarPassword = req.body.confirmar_password || '';
     const sesionUsuario = req.session && req.session.usuario ? req.session.usuario : null;
+    // FIX v1.3.8: el login guarda la identidad en req.session.usuario.name y
+    // en las BD antiguas ese campo puede venir vacio. Antes se comparaba por
+    // id de la sesion, lo que hacia FALLAR siempre la re-autenticacion
+    // ("usuario o contrasena incorrectos") aunque las credenciales fueran
+    // correctas. Ahora se valida como en el login: nombre/email + password,
+    // y si hay sesion activa se exige ademas que sea el MISMO usuario.
     const usuarioValido = store.users.find(
-      u => u.id === (sesionUsuario ? sesionUsuario.id : -1) &&
-           ((u.name || '').toLowerCase() === confirmarUsuario.toLowerCase() ||
+      u => ((u.name || '').toLowerCase() === confirmarUsuario.toLowerCase() ||
             (u.email || '').toLowerCase() === confirmarUsuario.toLowerCase()) &&
-           String(u.password) === String(confirmarPassword)
+           String(u.password) === String(confirmarPassword) &&
+           (!sesionUsuario ||
+             u.id === sesionUsuario.id ||
+             (u.name || '').toLowerCase() === String(sesionUsuario.name || sesionUsuario.nombre || '').toLowerCase())
     );
     if (!usuarioValido) {
       return res.redirect(
