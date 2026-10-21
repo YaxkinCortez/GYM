@@ -10,7 +10,7 @@
       "role": "admin",
       "createdAt": "2026-10-14 23:52:59",
       "updatedAt": "2026-10-14 23:52:59",
-      "lastSignedIn": "2026-10-21 21:38:47"
+      "lastSignedIn": "2026-10-21 22:25:25"
     },
     {
       "id": 2,
@@ -171,7 +171,7 @@
       "membershipId": 1,
       "startDate": "2026-10-09",
       "endDate": "2026-11-08",
-      "isActive": 1,
+      "isActive": 0,
       "createdAt": "2026-10-14 23:52:59",
       "updatedAt": "2026-10-14 23:52:59"
     },
@@ -194,6 +194,26 @@
       "isActive": 0,
       "createdAt": "2026-10-14 23:52:59",
       "updatedAt": "2026-10-14 23:52:59"
+    },
+    {
+      "id": 9992,
+      "clientId": 1,
+      "membershipId": 1,
+      "startDate": "2026-10-01",
+      "endDate": "2026-10-25",
+      "isActive": 0,
+      "createdAt": "2026-10-21T22:25:05.206Z",
+      "updatedAt": "2026-10-21T22:25:05.206Z"
+    },
+    {
+      "id": 9993,
+      "clientId": 1,
+      "membershipId": 1,
+      "startDate": "2026-10-22",
+      "endDate": "2026-12-09",
+      "isActive": 1,
+      "createdAt": "2026-10-21 22:25:09",
+      "updatedAt": "2026-10-21 22:25:09"
     }
   ],
   "global_sales": [
@@ -281,6 +301,13 @@
       "membershipId": 1,
       "cost": 50,
       "saleDate": "2026-09-17 11:30:00"
+    },
+    {
+      "id": 3,
+      "clientId": 1,
+      "membershipId": 1,
+      "cost": 50,
+      "saleDate": "2026-10-21 22:25:09"
     }
   ],
   "visits": [
@@ -323,7 +350,7 @@
   ],
   "sistema_actualizaciones": {
     "repo": "YaxkinCortez/GYM",
-    "versionActual": "1.3.3",
+    "versionActual": "1.3.4",
     "ultimaComprobacion": "2026-10-21 21:38:49",
     "actualizacionDisponible": null,
     "comprobacionAutomatica": true,

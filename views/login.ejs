@@ -68,6 +68,11 @@
                 <i class="fas fa-exclamation-circle me-1"></i> <%= error %>
             </div>
         <% } %>
+        <% if (typeof exito !== 'undefined' && exito) { %>
+            <div class="alert alert-success py-2 small" role="alert">
+                <i class="fas fa-check-circle me-1"></i> <%= exito %>
+            </div>
+        <% } %>
         
         <form method="POST" action="/login.php" autocomplete="off">
             <div class="mb-3">
