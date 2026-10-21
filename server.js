@@ -84,6 +84,20 @@ const esScriptPrincipal = Boolean(process.argv[1] && (process.argv[1].endsWith('
 // Ruta del marcador que deja comprobar_y_actualizar.js cuando la instalación
 // reemplazó archivos del propio servidor (server.js, package.json, views/...).
 const RUTA_MARCADOR_REINICIO = path.join(__dirname, 'data', 'reiniciar_pendiente.flag');
+// v1.3.4: marcador que deja la instalacion webapp para indicar que el proceso
+// NUEVO debe generar token de arranque limpio (=> sesion cerrada obligatoria).
+// Se separa del marcador normal de reinicio porque ese se borra al arrancar el
+// nuevo servidor, antes de que este decida si hereda o regenera el token.
+const RUTA_MARCADOR_INSTALACION_WEB = path.join(__dirname, 'data', 'instalacion_web_pendiente.flag');
+// FIX v1.3.4: si quedo este marcador de una instalacion webapp que murio a
+// medias (el servidor se mataba a si mismo antes de reiniciar), al arrancar
+// ahora regeneramos token limpio: cualquier sesion antigua queda invalidada y
+// el usuario entra al login con la nueva version en vez de quedar "sin acceso".
+if (esScriptPrincipal && fs.existsSync(RUTA_MARCADOR_INSTALACION_WEB)) {
+  try { fs.unlinkSync(RUTA_MARCADOR_INSTALACION_WEB); } catch (_) {}
+  try { generarTokenArranque(); } catch (_) {}
+  console.log('[Auto-Reinicio] Instalacion webapp interrumpida detectada: token regenerado, se exigira iniciar sesion de nuevo.');
+}
 let reinicioEnCurso = false;
 
 /**
@@ -127,14 +141,16 @@ function relanzarServidor(motivo = 'actualización instalada') {
     })(),
     // GF_TOKEN_ARRANQUE: en un reinicio MANUAL (sin instalación) el proceso
     // nuevo hereda el token y la sesión sobrevive. PERO si existe el marcador
-    // de instalación pendiente (acabamos de instalar una actualización desde
-    // la webapp), NO se hereda ni se borra data/.token_arranque: el proceso
-    // nuevo generará token limpio => la sesión anterior queda CERRADA y hay
-    // que volver a iniciar sesión con la nueva versión (v1.3.1).
+    // instalacion_web_pendiente.flag (acabamos de instalar una actualización
+    // desde la webapp), NO se hereda: el proceso nuevo genera token limpio
+    // => la sesión anterior queda CERRADA y hay que volver a iniciar sesión
+    // con usuario y contraseña (re-autenticación obligatoria v1.3.4).
     env: (() => {
       const envHijo = { ...process.env, GF_RELANZADO: '1', GF_REINTENTO: String(reintento) };
-      if (!fs.existsSync(RUTA_MARCADOR_REINICIO)) {
+      if (!fs.existsSync(RUTA_MARCADOR_INSTALACION_WEB)) {
         envHijo.GF_TOKEN_ARRANQUE = TOKEN_ARRANQUE;
+      } else {
+        try { fs.unlinkSync(RUTA_MARCADOR_INSTALACION_WEB); } catch (_) {}
       }
       return envHijo;
     })()
@@ -278,7 +294,7 @@ app.use(
   session({
     name: 'gfsid',
     secret: process.env.SESSION_SECRET || 'gimnasio_la_fabrica_secret_2026',
-    resave: false,
+    resave: false, // v1.3.4: en falso para que req.session.destroy() borre la cookie al instalar actualizacion
     saveUninitialized: false,
     // Cookie de sesion sin maxAge: caduca al cerrar el navegador.
     // Ademas, al reiniciar/relanzar el servidor la firma (secret) es la misma,
@@ -436,7 +452,9 @@ app.get(['/', '/login', '/login.php'], (req, res) => {
   if (req.session.usuario) {
     return res.redirect('/pages/dashboard.php');
   }
-  res.render('login', { error: '' });
+  // v1.3.4: mostrar en el login el mensaje de exito tras actualizar (la sesion
+  // fue cerrada a proposito por seguridad, aqui se explica al usuario).
+  res.render('login', { error: '', exito: req.query.msg || '' });
 });
 
 app.post(['/login', '/login.php'], (req, res) => {
@@ -444,7 +462,7 @@ app.post(['/login', '/login.php'], (req, res) => {
   const password = req.body.password || '';
 
   if (!nameOrEmail || !password) {
-    return res.render('login', { error: 'Por favor completa todos los campos' });
+    return res.render('login', { error: 'Por favor completa todos los campos', exito: '' });
   }
 
   const user = store.users.find(
@@ -452,7 +470,7 @@ app.post(['/login', '/login.php'], (req, res) => {
   );
 
   if (!user) {
-    return res.render('login', { error: 'Nombre o contraseña incorrectos' });
+    return res.render('login', { error: 'Nombre o contraseña incorrectos', exito: '' });
   }
 
   user.lastSignedIn = getNowStr();
@@ -897,14 +915,38 @@ app.post(['/clientes', '/pages/clientes.php'], requireAuth, (req, res) => {
     const membershipId = parseInt(req.body.membershipId, 10);
     const startDate = req.body.startDate || today;
 
+    let mensajeAcumulacion = '';
     const plan = store.memberships.find(m => m.id === membershipId);
     if (plan) {
-      const startD = new Date(startDate);
+      const duracionPlan = plan.durationDays || 30;
+
+      // FIX v1.3.4: ACUMULACION DE DIAS (funcion que operaba correctamente y
+      // se perdio en refactorizaciones). Si el socio tiene una membresia
+      // VIGENTE, la nueva compra se SUMA a los dias activos en lugar de
+      // reemplazarla. Ejemplo: le quedan 3 dias y compra un plan de 30 ->
+      // vence con 33 dias de vigencia acumulada desde hoy.
+      const hoyStr = today;
+      const vigentes = store.clientmemberships
+        .filter(cm => cm.clientId === clientId && getDaysDiff(cm.endDate, hoyStr) >= 0)
+        .sort((a, b) => (a.endDate < b.endDate ? 1 : -1)); // la de vencimiento mas lejano primero
+      let startD;
+      if (vigentes.length > 0) {
+        const ultimaVigente = vigentes[0];
+        // Continuar desde el dia despues del vencimiento actual para no perder ni un dia
+        const baseD = new Date(ultimaVigente.endDate);
+        baseD.setDate(baseD.getDate() + 1);
+        startD = baseD;
+        const diasRestantesPrevios = Math.max(getDaysDiff(ultimaVigente.endDate, hoyStr), 0) + 1;
+        mensajeAcumulacion = ` Se acumularon ${diasRestantesPrevios} dia(s) restante(s) de la membresia anterior: vigencia total ${diasRestantesPrevios + duracionPlan} dias.`;
+      } else {
+        startD = new Date(startDate || hoyStr);
+      }
       const endD = new Date(startD);
-      endD.setDate(endD.getDate() + (plan.durationDays || 30));
+      endD.setDate(endD.getDate() + duracionPlan);
       const endDate = endD.toISOString().split('T')[0];
 
-      // Mark older memberships as inactive
+      // Mark older memberships as inactive (historial: quedan registradas,
+      // solo cambia el flag; la nueva pasa a ser la activa con fechas acumuladas)
       store.clientmemberships.forEach(cm => {
         if (cm.clientId === clientId) cm.isActive = 0;
       });
@@ -929,7 +971,7 @@ app.post(['/clientes', '/pages/clientes.php'], requireAuth, (req, res) => {
       });
     }
 
-    return res.redirect('/pages/clientes.php?msg=' + encodeURIComponent('Membresía asignada y cobrada con éxito.'));
+    return res.redirect('/pages/clientes.php?msg=' + encodeURIComponent('Membresía asignada y cobrada con éxito.' + mensajeAcumulacion));
   }
 
   res.redirect('/pages/clientes.php');
@@ -1918,6 +1960,32 @@ app.post(['/actualizaciones', '/pages/actualizaciones.php'], requireAdmin, async
       );
     }
 
+    // v1.3.4 RE-AUTENTICACION OBLIGATORIA: instalar una actualizacion es la
+    // operacion mas delicada del sistema (reemplaza archivos del servidor).
+    // Ademas, segun lo pedido, el proceso CIERRA LA SESION del usuario actual:
+    // se destruye req.session antes de instalar y, tras el reinicio, habra que
+    // volver a iniciar sesion con usuario y contrasena.
+    const confirmarUsuario = (req.body.confirmar_usuario || '').trim();
+    const confirmarPassword = req.body.confirmar_password || '';
+    const sesionUsuario = req.session && req.session.usuario ? req.session.usuario : null;
+    const usuarioValido = store.users.find(
+      u => u.id === (sesionUsuario ? sesionUsuario.id : -1) &&
+           ((u.name || '').toLowerCase() === confirmarUsuario.toLowerCase() ||
+            (u.email || '').toLowerCase() === confirmarUsuario.toLowerCase()) &&
+           u.password === confirmarPassword
+    );
+    if (!usuarioValido) {
+      return res.redirect(
+        '/pages/actualizaciones.php?msg=' + encodeURIComponent('Instalacion cancelada: usuario o contraseña incorrectos. Solo el usuario autenticado puede confirmar una actualización.') + '&msg_type=danger'
+      );
+    }
+
+    // Cerrar sesion ANTES de tocar cualquier archivo (queda invalidada aunque
+    // la instalacion falle a medias).
+    try { guardarBaseDatos(); } catch (_) {}
+    await new Promise(resolve => req.session.destroy(() => resolve()));
+    res.clearCookie('gfsid');
+
     // 1. RESPALDO AUTOMÁTICO DE SEGURIDAD PREVIO (Punto de restauración)
     const snapshot = {
       users: JSON.parse(JSON.stringify(store.users)),
@@ -2011,10 +2079,12 @@ app.post(['/actualizaciones', '/pages/actualizaciones.php'], requireAdmin, async
     });
 
     // Regenerar el archivo zip del proyecto actualizado
-    // v1.3.1: eliminar cualquier proceso Node zombie del proyecto para que
-    // el navegador no quede hablando con el servidor viejo tras el reinicio.
-    matarProcesosNodePropios();
-
+    // FIX v1.3.4: NO matar procesos Node aqui. El servidor que atiende esta
+    // peticion es precisamente uno de esos procesos: al matarse a si mismo
+    // (taskkill /T se lleva tambien al lanzador .vbs/.bat), la instalacion se
+    // interrumpia antes de ofrecer el reinicio y el cliente veia "no se puede
+    // obtener acceso a esta pagina". La limpieza de zombies ocurre ahora en
+    // relanzarServidor() (justo antes de morir ordenadamente) y al arrancar.
     generarZipProyecto();
 
     // 3. GENERAR ALERTA VISIBLE PARA EL USUARIO
@@ -2032,24 +2102,26 @@ app.post(['/actualizaciones', '/pages/actualizaciones.php'], requireAdmin, async
       archivosRecibidos.some(a => /(^|\/)(server\.js|package(-lock)?\.json|views\/)/i.test(String(a)));
 
     if (tocaArchivosServidor) {
+      // v1.3.4: marcador para que el proceso NUEVO regenere el token de arranque
+      // (sesion cerrada obligatoria tras actualizar; no se hereda la sesion).
+      try { fs.writeFileSync(RUTA_MARCADOR_INSTALACION_WEB, new Date().toISOString()); } catch (_) {}
       return res.send(`<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>Actualización instalada</title>
 <style>body{font-family:system-ui,sans-serif;background:#0f172a;color:#e2e8f0;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
 .card{text-align:center;max-width:560px;padding:2rem}.ok{color:#22c55e;font-size:3rem}.btn{display:inline-block;margin-top:1rem;padding:.6rem 1.4rem;border-radius:.5rem;text-decoration:none;font-weight:600}
 .verde{background:#22c55e;color:#fff}.gris{background:#334155;color:#cbd5e1;margin-left:.5rem}</style></head>
 <body><div class="card"><div class="ok">✅</div><h2>Actualización ${actualizacion.version} instalada</h2>
-<p>La nueva versión incluye cambios en el propio servidor. Para dejarla funcionando al 100%, pulsa <b>Reiniciar ahora</b>.<br>
-<b>No cerrarás sesión</b>: el navegador se reconecta solo en unos segundos y tus datos quedan intactos.</p>
+<p>La nueva versión incluye cambios en el propio servidor. Pulsa <b>Reiniciar ahora</b> para dejarla funcionando.<br>
+<b>Por seguridad, tu sesión fue cerrada durante la instalación:</b> después del reinicio deberás volver a iniciar sesión con tu usuario y contraseña. Tus socios, cobros, adeudos e inventario quedan intactos.</p>
 <form method="POST" action="/pages/actualizaciones.php" style="margin-top:1rem">
 <input type="hidden" name="accion" value="reiniciar_servidor">
 <button type="submit" class="btn verde" style="border:0;cursor:pointer;font-size:1rem">🔄 Reiniciar ahora</button>
-<a class="btn gris" href="/pages/actualizaciones.php">Reiniciar más tarde</a>
+<a class="btn gris" href="/login.php">Reiniciar más tarde</a>
 </form></div></body></html>`);
     }
 
     return res.redirect(
-      '/pages/actualizaciones.php?msg=' +
-        encodeURIComponent(`🎉 ¡Actualización a ${actualizacion.version} instalada con éxito! La base de datos local fue preservada intacta.`) +
-        '&msg_type=success'
+      '/login.php?msg=' +
+        encodeURIComponent(`🎉 ¡Actualización a ${actualizacion.version} instalada con éxito! Inicia sesión de nuevo para continuar. La base de datos local fue preservada intacta.`)
     );
   }
 

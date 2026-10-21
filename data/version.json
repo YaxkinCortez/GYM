@@ -1,6 +1,6 @@
 {
-  "version": "1.3.3",
+  "version": "1.3.4",
   "repo": "YaxkinCortez/GYM",
   "fechaActualizacion": "2026-10-22",
-  "descripcion": "Boton de actualizaciones GitHub en Estado del Sistema + arranque 100% en segundo plano sin consolas visibles"
+  "descripcion": "Re-autenticacion obligatoria para instalar actualizaciones (cierra sesion) + acumulacion de dias en membresias"
 }

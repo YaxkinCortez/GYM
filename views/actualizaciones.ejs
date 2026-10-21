@@ -74,12 +74,46 @@
 
                                 <% if (updater.actualizacionDisponible) { %>
                                 <div class="d-grid gap-2 mb-3">
-                                    <form method="POST" action="/pages/actualizaciones.php" class="m-0" onsubmit="return confirm('¿Instalar la versión <%= updater.actualizacionDisponible.version %>? Se creará un respaldo automático ANTES de instalar. Tu base de datos local NO se modifica.');">
+                                    <form method="POST" action="/pages/actualizaciones.php" class="m-0" id="formInstalar">
                                         <input type="hidden" name="accion" value="instalar_actualizacion">
-                                        <button type="submit" class="btn btn-success btn-lg shadow-sm">
-                                            <i class="fas fa-download me-2"></i>Descargar e Instalar Ahora (v<%= updater.actualizacionDisponible.version %>)
-                                        </button>
+                                        <div class="card border shadow-sm bg-light">
+                                            <div class="card-body py-3">
+                                                <div class="fw-bold mb-2"><i class="fas fa-lock me-1 text-danger"></i>Confirmación de seguridad para instalar v<%= updater.actualizacionDisponible.version %></div>
+                                                <div class="row g-2">
+                                                    <div class="col-md-5">
+                                                        <input type="text" name="confirmar_usuario" class="form-control" placeholder="Tu usuario" autocomplete="off" required>
+                                                    </div>
+                                                    <div class="col-md-5">
+                                                        <input type="password" name="confirmar_password" class="form-control" placeholder="Tu contraseña" autocomplete="new-password" required>
+                                                    </div>
+                                                    <div class="col-md-2 d-grid">
+                                                        <button type="submit" class="btn btn-success">
+                                                            <i class="fas fa-download me-1"></i>Instalar
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                <div class="small text-muted mt-2">
+                                                    <i class="fas fa-shield-halved me-1"></i>Se creará un respaldo automático ANTES de instalar. Tu base de datos local NO se modifica. Por seguridad, <b>se cerrará tu sesión</b> durante la instalación y deberás volver a iniciar sesión al terminar.
+                                                </div>
+                                            </div>
+                                        </div>
                                     </form>
+                                    <script>
+                                    // v1.3.4: el boton de instalar ahora pide usuario y contrasena en la propia pagina
+                                    document.getElementById('formInstalar').addEventListener('submit', function (e) {
+                                        var u = this.querySelector('[name=confirmar_usuario]').value.trim();
+                                        var p = this.querySelector('[name=confirmar_password]').value;
+                                        if (!u || !p) {
+                                            e.preventDefault();
+                                            alert('Para instalar la actualización debes escribir tu usuario y contraseña de confirmación.');
+                                            return false;
+                                        }
+                                        if (!confirm('¿Instalar la versión <%= updater.actualizacionDisponible.version %>? Se cerrará tu sesión actual y el sistema se reiniciará automáticamente. Tus socios, cobros, adeudos e inventario quedan intactos.')) {
+                                            e.preventDefault();
+                                            return false;
+                                        }
+                                    });
+                                    </script>
                                 </div>
                                 <div class="alert alert-warning bg-warning-subtle text-warning-emphasis border-warning small mb-0">
                                     <i class="fas fa-circle-info me-2"></i>Origen: <%= updater.actualizacionDisponible.descripcion || 'GitHub main' %> (<%= updater.actualizacionDisponible.fecha || 'reciente' %>). La instalación cierra sesión y reinicia el sistema automáticamente al terminar; tus socios, cobros, adeudos e inventario quedan intactos.
