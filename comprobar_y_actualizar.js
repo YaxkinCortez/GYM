@@ -47,10 +47,19 @@ import { generarTokenArranque } from './data/arranqueToken.js';
 // MODO LOCAL (v1.3.0): este comprobador ya NO se ejecuta desde el lanzador ni
 // desde server.js; todo queda 100% offline. Si alguien lo corre a mano, solo
 // renueva el token de arranque y sale sin tocar la red.
-if (!process.argv.includes('--sin-token-nuevo') && process.env.GF_RELANZADO !== '1' && !process.env.GF_REINTENTO) {
+// En modo web (--web-actualizar) NO se renueva el token aqui: server.js ya
+// lo renueva antes de lanzar este proceso, para cerrar la sesion de forma
+// controlada y que el navegador muestre el login tras la instalacion.
+if (!process.argv.includes('--sin-token-nuevo') && !process.argv.includes('--web-actualizar') && process.env.GF_RELANZADO !== '1' && !process.env.GF_REINTENTO) {
   try { generarTokenArranque(); } catch (_) {}
 }
-if (!process.argv.includes('--forzar-github')) {
+// --web-actualizar: modo "instalar desde la webapp" (v1.3.1). Lo invoca
+// server.js cuando el administrador pulsa "Descargar e Instalar Ahora".
+// Funciona igual que --forzar-github pero SIN generar token de arranque
+// nuevo (server.js lo gestiona) y con limite de tiempo mayor, porque la
+// descarga del paquete puede tardar mas de 20 s en redes lentas.
+const MODO_WEB = process.argv.includes('--web-actualizar');
+if (!process.argv.includes('--forzar-github') && !MODO_WEB) {
   console.log('\n===============================================================================');
   console.log(' [MODO LOCAL] La comprobación/descarga de actualizaciones por GitHub está');
   console.log(' desactivada desde la v1.3.0. El sistema arranca 100% offline.');
@@ -64,7 +73,7 @@ if (!process.argv.includes('--forzar-github')) {
 // GitHub indefinidamente), el .bat jamas llegaba a lanzar server.js y el
 // navegador mostraba "No se puede obtener acceso a esta pagina".
 // Regla absoluta: este comprobador SIEMPRE termina solo, como maximo en 20 s.
-const LIMITE_TOTAL_MS = 20000;
+const LIMITE_TOTAL_MS = process.argv.includes('--web-actualizar') ? 120000 : 20000;
 let finalizado = false;
 function terminarSiempre(codigo, motivo) {
   if (finalizado) return;
@@ -761,6 +770,14 @@ async function comprobarYActualizar() {
     console.log(' Solicitando a iniciar_gimnasio.bat que se vuelva a lanzar para arrancar la webapp...');
     console.log('===============================================================================\n');
 
+    // MODO WEB (v1.3.1): si quien nos lanzo es server.js desde la pagina
+    // "Estado del Sistema", NO debemos abrir un servidor propio al terminar:
+    // el padre (server.js) se auto-relanza con los archivos nuevos y ademas
+    // mata cualquier proceso Node zombie del proyecto. Salida 0 = ok.
+    if (MODO_WEB) {
+      terminarSiempre(0, null);
+    }
+
     // Código de salida 2 indica a iniciar_gimnasio.bat que hubo actualización y debe volver a lanzarse
     process.exit(2);
 
@@ -772,8 +789,9 @@ async function comprobarYActualizar() {
       if (fs.existsSync(rutaDescarga)) fs.unlinkSync(rutaDescarga);
     } catch (_) {}
     // Red lenta para DESCARGAS (paquetes grandes): NO bloquear el arranque.
-    // El .bat puede tardar en reintentar, asi que lanzamos el servidor nosotros.
-    lanzarServidorLocal();
+    // En modo web, el padre (server.js) decide si relanzarse o no; nunca
+    // abrir un servidor extra desde aqui.
+    if (!MODO_WEB) lanzarServidorLocal();
     terminarSiempre(0, null);
   }
 }
