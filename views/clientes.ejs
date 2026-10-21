@@ -85,7 +85,7 @@
                                             <% if (c.membresiaActual) { %>
                                                 <div>
                                                     <span class="badge <%= c.membresiaEstadoClase %>"><%= c.membresiaActual.membership_name %></span>
-                                                    <small class="d-block text-muted">Hasta <%= c.membresiaActual.endDate %> (<%= c.diasRestantes %> días)</small>
+                                                    <small class="d-block text-muted">Hasta <%= F(c.membresiaActual.endDate) %> (<%= c.diasRestantes %> días)</small>
                                                 </div>
                                             <% } else { %>
                                                 <span class="badge bg-secondary">Sin membresía</span>
@@ -341,7 +341,7 @@
                             ${m ? `
                                 <div class="p-2 rounded bg-light border">
                                     <div class="fw-bold text-success">${m.membership_name}</div>
-                                    <div class="small">Inicio: ${m.startDate} | Fin: ${m.endDate}</div>
+                                    <div class="small">Inicio: ${F(m.startDate)} | Fin: ${F(m.endDate)}</div>
                                     <div class="small fw-bold ${m.dias_restantes >= 0 ? 'text-primary' : 'text-danger'}">
                                         ${m.dias_restantes >= 0 ? m.dias_restantes + ' días restantes' : 'Caducada hace ' + Math.abs(m.dias_restantes) + ' días'}
                                     </div>

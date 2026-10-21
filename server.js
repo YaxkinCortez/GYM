@@ -14,6 +14,8 @@ import {
   getNowStr,
   getDaysDiff,
   guardarBaseDatos,
+  formatearFechaLatina,
+  parseFechaLocal,
   realizarRespaldoEnRuta,
   obtenerArchivosEnRuta,
   verificarYEjecutarRespaldoProgramado
@@ -419,6 +421,8 @@ app.use((req, res, next) => {
   res.locals.configRespaldos = store.config_respaldos || null;
   res.locals.usuario = req.session.usuario || null;
   res.locals.APP_NAME = 'Gimnasio La Fábrica';
+  // v1.3.5: helper global de fechas en formato latino dd/mm/aaaa (con hora opcional)
+  res.locals.F = (v, conHora = false) => formatearFechaLatina(v, conHora);
   res.locals.hoy = getTodayStr();
   res.locals.fechaActual = getNowStr();
   res.locals.updaterInfo = store.sistema_actualizaciones || null;
@@ -913,51 +917,63 @@ app.post(['/clientes', '/pages/clientes.php'], requireAuth, (req, res) => {
   if (accion === 'asignar_membresia') {
     const clientId = parseInt(req.body.clientId, 10);
     const membershipId = parseInt(req.body.membershipId, 10);
-    const startDate = req.body.startDate || today;
+    // FIX v1.3.5: la fecha del formulario <input type="date"> se normaliza SIEMPRE
+    // a ISO yyyy-mm-dd aqui (se guarda en BD y se muestra al usuario en dd/mm/aaaa).
+    const startDate = (req.body.startDate || today).slice(0, 10);
 
     let mensajeAcumulacion = '';
     const plan = store.memberships.find(m => m.id === membershipId);
     if (plan) {
       const duracionPlan = plan.durationDays || 30;
 
-      // FIX v1.3.4: ACUMULACION DE DIAS (funcion que operaba correctamente y
-      // se perdio en refactorizaciones). Si el socio tiene una membresia
-      // VIGENTE, la nueva compra se SUMA a los dias activos en lugar de
-      // reemplazarla. Ejemplo: le quedan 3 dias y compra un plan de 30 ->
-      // vence con 33 dias de vigencia acumulada desde hoy.
+      // FIX v1.3.4/v1.3.5: ACUMULACION DE DIAS. Si el socio tiene una membresia
+      // VIGENTE, la nueva compra NO la reemplaza ni la "concluye": se SUMAN los
+      // dias. Ejemplo: vencimiento actual 25/10 y hoy 22/10 (quedan 3 dias) +
+      // plan de 30 -> la anterior sigue Vigente hasta el 25/10 y la nueva inicia
+      // el 26/10 y vence el 24/11 (33 dias de vigencia total desde hoy).
       const hoyStr = today;
       const vigentes = store.clientmemberships
         .filter(cm => cm.clientId === clientId && getDaysDiff(cm.endDate, hoyStr) >= 0)
         .sort((a, b) => (a.endDate < b.endDate ? 1 : -1)); // la de vencimiento mas lejano primero
       let startD;
+      let startISO = startDate;
       if (vigentes.length > 0) {
         const ultimaVigente = vigentes[0];
         // Continuar desde el dia despues del vencimiento actual para no perder ni un dia
-        const baseD = new Date(ultimaVigente.endDate);
+        const baseD = parseFechaLocal(ultimaVigente.endDate);
         baseD.setDate(baseD.getDate() + 1);
         startD = baseD;
+        startISO = `${baseD.getFullYear()}-${String(baseD.getMonth() + 1).padStart(2, '0')}-${String(baseD.getDate()).padStart(2, '0')}`;
         const diasRestantesPrevios = Math.max(getDaysDiff(ultimaVigente.endDate, hoyStr), 0) + 1;
-        mensajeAcumulacion = ` Se acumularon ${diasRestantesPrevios} dia(s) restante(s) de la membresia anterior: vigencia total ${diasRestantesPrevios + duracionPlan} dias.`;
+        mensajeAcumulacion = ` Se acumularon ${diasRestantesPrevios} dia(s) restante(s): la nueva membresia inicia el ${formatearFechaLatina(startISO)} y vence con ${diasRestantesPrevios + duracionPlan} dias de vigencia acumulada.`;
       } else {
-        startD = new Date(startDate || hoyStr);
+        startD = parseFechaLocal(startDate || hoyStr) || new Date();
       }
       const endD = new Date(startD);
-      endD.setDate(endD.getDate() + duracionPlan);
-      const endDate = endD.toISOString().split('T')[0];
+      endD.setDate(endD.getDate() + duracionPlan - 1); // FIX v1.3.5: el dia de inicio CUENTA como dia de vigencia (30 dias = inicio + 29 -> exactos)
+      // Formateo manual en hora LOCAL (toISOString retrocedia un dia en America)
+      const padF = (n) => String(n).padStart(2, '0');
+      const endDate = `${endD.getFullYear()}-${padF(endD.getMonth() + 1)}-${padF(endD.getDate())}`;
 
-      // Mark older memberships as inactive (historial: quedan registradas,
-      // solo cambia el flag; la nueva pasa a ser la activa con fechas acumuladas)
+      // Historial v1.3.5: SOLO las membresias ya VENCIDAS pasan a "Concluida".
+      // Las vigentes conservan su estado (la acumulacion no concluye nada por
+      // adelantado); la nueva compra queda "Vigente" si inicia hoy o
+      // "Programada" si inicia en el futuro (se activa sola al llegar su fecha,
+      // porque los listados siempre ordenan por vencimiento mas lejano).
       store.clientmemberships.forEach(cm => {
-        if (cm.clientId === clientId) cm.isActive = 0;
+        if (cm.clientId === clientId && getDaysDiff(cm.endDate, hoyStr) < 0) cm.isActive = 0;
       });
+      const iniciaHoyOAntes = getDaysDiff(startISO, hoyStr) <= 0;
+      const estadoNuevo = iniciaHoyOAntes ? 'Vigente' : 'Programada';
 
       store.clientmemberships.push({
         id: nextId('clientmemberships'),
         clientId,
         membershipId,
-        startDate,
+        startDate: startISO,
         endDate,
-        isActive: 1,
+        isActive: iniciaHoyOAntes ? 1 : 0,
+        estado: estadoNuevo,
         createdAt: now,
         updatedAt: now
       });

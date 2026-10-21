@@ -380,11 +380,50 @@ export function getNowStr() {
   return formatDateTime(new Date());
 }
 
+// FIX v1.3.5: parseo MANUAL de fechas "YYYY-MM-DD" en hora LOCAL.
+// new Date('2026-10-22') se interpreta como medianoche UTC y en zonas
+// horarias de America (UTC-6 etc.) la fecha "retrocede un dia" al leer
+// getDate()/getMonth(). Este parser evita por completo esa conversion UTC.
+export function parseFechaLocal(str) {
+  if (!str) return null;
+  const s = String(str).trim();
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ](\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+  if (m) {
+    return new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
+  }
+  // Formato latino dd/mm/yyyy (con o sin hora)
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?: (\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+  if (m) {
+    return new Date(+m[3], +m[2] - 1, +m[1], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
+  }
+  // ISO con zona (committer.date de GitHub, p. ej. 2026-10-20T16:25:43Z)
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s)) {
+    const d = new Date(s);
+    return isNaN(d) ? null : d;
+  }
+  return null;
+}
+
 export function getDaysDiff(futureDateStr, baseDateStr = getTodayStr()) {
-  const f = new Date(futureDateStr);
-  const b = new Date(baseDateStr);
-  const diffTime = f.getTime() - b.getTime();
-  return Math.round(diffTime / (1000 * 60 * 60 * 24));
+  const f = parseFechaLocal(futureDateStr);
+  const b = parseFechaLocal(baseDateStr);
+  if (!f || !b) return NaN;
+  // Diferencia de dias calendarios usando solo anio/mes/dia (sin horas ni UTC)
+  const fa = Date.UTC(f.getFullYear(), f.getMonth(), f.getDate());
+  const ba = Date.UTC(b.getFullYear(), b.getMonth(), b.getDate());
+  return Math.round((fa - ba) / (1000 * 60 * 60 * 24));
+}
+
+// Formateador latino dd/mm/aaaa (opcional + hh:mm:ss) para TODA la interfaz.
+// Acepta internamente tanto ISO (yyyy-mm-dd) como el propio formato latino.
+export function formatearFechaLatina(str, conHora = false) {
+  if (!str) return '';
+  const d = parseFechaLocal(str);
+  if (!d || isNaN(d.getTime())) return String(str);
+  const pad = (n) => String(n).padStart(2, '0');
+  const base = `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+  if (!conHora) return base;
+  return `${base} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
 // Inicializar configuración de respaldos si no existe

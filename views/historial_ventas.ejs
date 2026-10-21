@@ -44,7 +44,7 @@
                                     <% ventas.forEach(function(v) { %>
                                     <tr>
                                         <td><span class="badge bg-dark font-monospace fs-6">#<%= v.folio %></span></td>
-                                        <td><%= v.createdAt %></td>
+                                        <td><%= F(v.createdAt, true) %></td>
                                         <td><%= v.vendedor || 'Administrador' %></td>
                                         <td class="fw-bold"><%= v.cliente || 'Público General' %></td>
                                         <td>$<%= Number(v.totalInternal || 0).toFixed(2) %></td>

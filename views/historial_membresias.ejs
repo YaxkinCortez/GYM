@@ -32,8 +32,8 @@
                                     <tr>
                                         <td class="fw-bold"><%= h.fullName %></td>
                                         <td><span class="badge bg-primary-subtle text-primary border"><%= h.plan %></span></td>
-                                        <td><%= h.startDate %></td>
-                                        <td><%= h.endDate %></td>
+                                        <td><%= F(h.startDate) %></td>
+                                        <td><%= F(h.endDate) %></td>
                                         <td>
                                             <span class="badge <%= h.isActive ? 'bg-success' : 'bg-secondary' %>">
                                                 <%= h.isActive ? 'Vigente' : 'Concluida' %>

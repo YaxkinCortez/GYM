@@ -210,7 +210,7 @@
                                     <% historial.forEach(function(h) { %>
                                     <tr>
                                         <td><span class="badge bg-dark font-monospace fs-6"><%= h.version %></span></td>
-                                        <td><%= h.fecha %></td>
+                                        <td><%= F(h.fecha, true) %></td>
                                         <td>
                                             <span class="small"><%= h.origen %></span>
                                         </td>
@@ -248,7 +248,7 @@
                                 <tbody>
                                     <% updater.puntosDeRestauracion.forEach(function(p, idx) { %>
                                     <tr>
-                                        <td><%= p.fecha %></td>
+                                        <td><%= F(p.fecha, true) %></td>
                                         <td class="fw-bold"><%= p.etiqueta %></td>
                                         <td class="small text-muted"><%= p.resumen %></td>
                                         <td class="text-end">

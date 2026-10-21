@@ -279,7 +279,7 @@
                                                 <td class="ps-4 fw-bold text-dark">
                                                     <i class="fas fa-file-code text-primary me-2"></i><%= item.nombreArchivo %>
                                                 </td>
-                                                <td class="text-muted small"><%= item.fecha %></td>
+                                                <td class="text-muted small"><%= F(item.fecha, true) %></td>
                                                 <td>
                                                     <% if (item.tipo && item.tipo.includes('Programado')) { %>
                                                         <span class="badge bg-primary-subtle text-primary border border-primary-subtle">

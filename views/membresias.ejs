@@ -82,8 +82,8 @@
                                     <tr>
                                         <td class="fw-bold"><%= sm.fullName %></td>
                                         <td><span class="badge bg-primary-subtle text-primary border"><%= sm.plan %></span></td>
-                                        <td><%= sm.startDate %></td>
-                                        <td><%= sm.endDate %></td>
+                                        <td><%= F(sm.startDate) %></td>
+                                        <td><%= F(sm.endDate) %></td>
                                         <td>
                                             <span class="badge <%= sm.diasRestantes >= 5 ? 'bg-success' : (sm.diasRestantes >= 0 ? 'bg-warning text-dark' : 'bg-danger') %>">
                                                 <%= sm.diasRestantes >= 0 ? sm.diasRestantes + ' días' : 'Caducó' %>

@@ -99,7 +99,7 @@
                                     <% abonosRecientes.forEach(function(a) { %>
                                     <tr>
                                         <td>#<%= a.id %></td>
-                                        <td><%= a.createdAt %></td>
+                                        <td><%= F(a.createdAt, true) %></td>
                                         <td class="fw-bold"><%= a.cliente %></td>
                                         <td class="text-success fw-bold">+$<%= a.amount.toFixed(2) %></td>
                                         <td><span class="badge bg-secondary"><%= a.paymentMethod %></span></td>
