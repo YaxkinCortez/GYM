@@ -1,6 +1,7 @@
 {
-  "version": "1.4.0",
+  "version": "1.4.1",
   "repo": "YaxkinCortez/GYM",
+  "rama": "main",
   "fechaActualizacion": "2026-10-22",
-  "descripcion": "v1.4.0: reinicio AUTOMATICO garantizado tras actualizar (mata todos los node.exe y relanza iniciar_gimnasio.bat desde cero, sin tocar la BD); re-autenticacion obligatoria al instalar ahora si funciona (acepta ambos juegos de nombres de campo); pantalla completa real con perfil dedicado del navegador; app abrida solo tras confirmar HTTP 200"
+  "descripcion": "v1.4.1: FIX RAIZ del boton Actualizar - la rama de GitHub ahora es configurable (campo 'rama' en version.json o env GF_RAMA_REPO; antes se descargaba SIEMPRE main.zip por lo que en pruebas con rama alterna instalaba codigo viejo y parecia no hacer nada). Busquedas de version/commits y descarga del paquete usan la misma rama. Normalizacion x.y.z al registrar versiones remotas (evita bucles con etiquetas tipo 1.4)."
 }

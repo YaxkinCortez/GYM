@@ -1888,7 +1888,11 @@ app.get(['/tablas', '/pages/tablas.php'], requireAdmin, (req, res) => {
 // ========================
 // ACTUALIZACIONES (GITHUB)
 // ========================
-async function consultarGitHub(repo) {
+async function consultarGitHub(repo, ramaParam) {
+  // FIX v1.4.1: la rama consultada es configurable (por defecto main). Si el
+  // equipo esta en modo pruebas apuntando a una rama alterna del repo, el
+  // boton "Buscar actualizaciones" e "Instalar" leen/descargan de ESA rama.
+  const rama = (ramaParam || 'main').replace(/[^A-Za-z0-9_./-]/g, '') || 'main';
   try {
     const headers = {
       'User-Agent': 'GimnasioLaFabrica-Updater',
@@ -1905,7 +1909,7 @@ async function consultarGitHub(repo) {
 
     // A. Consultar version.json remoto en GitHub
     try {
-      const resVer = await fetch(`https://raw.githubusercontent.com/${repo}/main/data/version.json`, {
+      const resVer = await fetch(`https://raw.githubusercontent.com/${repo}/${rama}/data/version.json`, {
         signal: AbortSignal.timeout(2500)
       });
       if (resVer.ok) {
@@ -1945,7 +1949,7 @@ async function consultarGitHub(repo) {
     } catch (_) {}
 
     // C. Si no hay release formal, consultar últimos commits
-    const resCommits = await fetch(`https://api.github.com/repos/${repo}/commits?per_page=1`, {
+    const resCommits = await fetch(`https://api.github.com/repos/${repo}/commits?sha=${encodeURIComponent(rama)}&per_page=1`, {
       headers,
       signal: AbortSignal.timeout(2500)
     });
@@ -2028,7 +2032,20 @@ app.post(['/actualizaciones', '/pages/actualizaciones.php'], requireAdmin, async
   // cuando el administrador pulsa el boton o instala una actualizacion.
   if (accion === 'comprobar_ahora') {
     updater.ultimaComprobacion = now;
-    const resultado = await consultarGitHub(updater.repo);
+    // FIX v1.4.1: antes se consultaba SIEMPRE la rama "main". Las pruebas se
+    // hacen en una rama alterna de GitHub, por lo que el boton nunca veia los
+    // cambios recien subidos y parecia "no instalar nada". Ahora la rama es
+    // configurable desde data/version.json (campo "rama") o con la variable
+    // de entorno GF_RAMA_REPO; por defecto sigue siendo main.
+    let ramaActiva = 'main';
+    try {
+      // FIX v1.4.1: leer el JSON directamente (obtenerInfoVersion vive solo en
+      // el comprobador; llamarlo aqui producia ReferenceError silencioso).
+      const infoV = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'version.json'), 'utf-8'));
+      if (infoV && typeof infoV.rama === 'string' && infoV.rama.trim()) ramaActiva = infoV.rama.trim();
+    } catch (_) {}
+    if (process.env.GF_RAMA_REPO) ramaActiva = process.env.GF_RAMA_REPO;
+    const resultado = await consultarGitHub(updater.repo, ramaActiva);
 
     if (resultado && resultado.offline) {
       return res.redirect(
@@ -2137,6 +2154,18 @@ app.post(['/actualizaciones', '/pages/actualizaciones.php'], requireAdmin, async
     await new Promise(resolve => req.session.destroy(() => resolve()));
     res.clearCookie('gfsid');
 
+    // FIX v1.4.1: rama configurable (misma que usó "Buscar actualizaciones"),
+    // leída de data/version.json ("rama") o variable GF_RAMA_REPO; default main.
+    // Se lee el JSON directamente: obtenerInfoVersion() solo existe en el
+    // comprobador, no en server.js (usarlo aqui lanzaba ReferenceError y la
+    // instalacion moria a medias -> el boton "no hacia nada").
+    let ramaActivaInstalacion = 'main';
+    try {
+      const infoVR = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'version.json'), 'utf-8'));
+      if (infoVR && typeof infoVR.rama === 'string' && infoVR.rama.trim()) ramaActivaInstalacion = infoVR.rama.trim();
+    } catch (_) {}
+    if (process.env.GF_RAMA_REPO) ramaActivaInstalacion = process.env.GF_RAMA_REPO;
+
     // 1. RESPALDO AUTOMÁTICO DE SEGURIDAD PREVIO (Punto de restauración)
     const snapshot = {
       users: JSON.parse(JSON.stringify(store.users)),
@@ -2180,7 +2209,7 @@ app.post(['/actualizaciones', '/pages/actualizaciones.php'], requireAdmin, async
         cwd: __dirname,
         encoding: 'utf8',
         timeout: 150000,
-        env: { ...process.env, GF_ALREADY_RAN: '1', GF_SIN_REINTENTO_WEB: '1' },
+        env: { ...process.env, GF_ALREADY_RAN: '1', GF_SIN_REINTENTO_WEB: '1', ...(ramaActivaInstalacion ? { GF_RAMA_REPO: ramaActivaInstalacion } : {}) },
         windowsHide: true
       }
     );
@@ -2200,7 +2229,12 @@ app.post(['/actualizaciones', '/pages/actualizaciones.php'], requireAdmin, async
 
     // FIX v1.3.2: versionAnterior estaba SIN DEFINIR aqui (ReferenceError que
     // rompia el flujo post-instalacion). Se captura antes de persistir.
-    const versionAnterior = versionLocal;
+    // FIX v1.4.1: se lee SIEMPRE desde disco tras la instalacion, porque las
+    // versiones remotas pueden venir con 2 digitos ("1.4") y guardarlas tal
+    // cual hacia que compararVersiones("1.4","1.4.0") reportara diferencia
+    // infinita (boton "no instala nada" / bucle de actualizaciones). Ahora se
+    // normaliza a x.y.z y se re-lee del version.json recien escrito.
+    const versionAnterior = formatearVersion(parsearVersion(versionLocal)) || versionLocal;
     updater.versionActual = actualizacion.version;
     updater.actualizacionDisponible = null;
 

@@ -573,6 +573,19 @@ async function comprobarYActualizar() {
   console.log('         GIMNASIO LA FÁBRICA - COMPROBADOR DE VERSIONES GITHUB');
   console.log('===============================================================================');
   console.log(` Repositorio configurado: https://github.com/${repo}`);
+  // FIX v1.4.1: rama configurable (campo "rama" de data/version.json o env
+  // GF_RAMA_REPO; default main). Antes se descargaba SIEMPRE main.zip, por lo
+  // que en pruebas con rama alterna el boton instalaba codigo viejo y parecia
+  // "no realizar ningun cambio".
+  let ramaRepo = 'main';
+  try {
+    const infoRama = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'version.json'), 'utf-8'));
+    if (infoRama && typeof infoRama.rama === 'string' && infoRama.rama.trim()) ramaRepo = infoRama.rama.trim();
+  } catch (_) {}
+  if (process.env.GF_RAMA_REPO) ramaRepo = process.env.GF_RAMA_REPO;
+  ramaRepo = ramaRepo.replace(/[^A-Za-z0-9_./-]/g, '') || 'main';
+  const urlPaqueteRama = `https://github.com/${repo}/archive/refs/heads/${encodeURIComponent(ramaRepo)}.zip`;
+  console.log(` Rama de GitHub configurada: ${ramaRepo}`);
   const versionLocal = obtenerVersionLocal();
   console.log(` Versión actual local:   ${versionLocal}`);
 
@@ -589,7 +602,7 @@ async function comprobarYActualizar() {
       tipo: 'simulacion',
       version: nuevaVer,
       descripcion: 'Actualización simulada para comprobación del ciclo de inicio y reinicio.',
-      urlDescarga: `https://github.com/${repo}/archive/refs/heads/main.zip`,
+      urlDescarga: urlPaqueteRama,
       commitSha: 'simulada_' + Date.now().toString(16)
     };
     console.log('\n [MODO PRUEBA] Simulación de incremento a versión superior: ' + nuevaVer);
@@ -611,12 +624,12 @@ async function comprobarYActualizar() {
 
     let versionRemota = null;
     let descripcionRemota = 'Nueva versión desde GitHub';
-    let urlDescargaRemota = `https://github.com/${repo}/archive/refs/heads/main.zip`;
+    let urlDescargaRemota = urlPaqueteRama;
     let commitShaRemoto = '';
 
     // A. Consultar el archivo version.json remoto en GitHub
     try {
-      const respVer = await hacerPeticionHttps(`https://raw.githubusercontent.com/${repo}/main/data/version.json`);
+      const respVer = await hacerPeticionHttps(`https://raw.githubusercontent.com/${repo}/${ramaRepo}/data/version.json`);
       if (respVer.statusCode === 200) {
         const vData = JSON.parse(respVer.body);
         if (vData && vData.version) {
@@ -647,7 +660,7 @@ async function comprobarYActualizar() {
     // C. Si no hay release, comprobar commits recientes
     if (!versionRemota) {
       try {
-        const respCommits = await hacerPeticionHttps(`https://api.github.com/repos/${repo}/commits?per_page=1`);
+        const respCommits = await hacerPeticionHttps(`https://api.github.com/repos/${repo}/commits?sha=${encodeURIComponent(ramaRepo)}&per_page=1`);
         if (respCommits.statusCode === 200) {
           const commits = JSON.parse(respCommits.body);
           if (Array.isArray(commits) && commits.length > 0) {
