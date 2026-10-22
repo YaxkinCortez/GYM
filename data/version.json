@@ -1,7 +1,7 @@
 {
-  "version": "1.4.1",
+  "version": "1.4.4",
   "repo": "YaxkinCortez/GYM",
   "rama": "main",
   "fechaActualizacion": "2026-10-22",
-  "descripcion": "v1.4.1: FIX RAIZ del boton Actualizar - la rama de GitHub ahora es configurable (campo 'rama' en version.json o env GF_RAMA_REPO; antes se descargaba SIEMPRE main.zip por lo que en pruebas con rama alterna instalaba codigo viejo y parecia no hacer nada). Busquedas de version/commits y descarga del paquete usan la misma rama. Normalizacion x.y.z al registrar versiones remotas (evita bucles con etiquetas tipo 1.4)."
+  "descripcion": "v1.4.4: FIX REAL navegador (los commits v1.4.2/v1.4.3/v1.4.4 anteriores NUNCA se subieron a GitHub - error verificado; el repo se quedo en 1.4.1, por eso el boton de actualizar nunca vio nada nuevo). Ahora: iniciar_gimnasio.bat e iniciar_gimnasio_oculto.vbs detectan el navegador PREDETERMINADO via registro Windows (UserChoice/ProgId) y lo abren en ventana MAXIMIZADA (--start-maximized); Chrome tiene prioridad sobre Edge como respaldo. El fix anterior de acumular dias/deuda/re-autenticacion (v1.3.8-v1.4.1) si esta publicado."
 }

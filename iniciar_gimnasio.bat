@@ -197,35 +197,69 @@ echo.
 
 set "URL_APP=http://127.0.0.1:3000/login.php"
 
-:: 1. Microsoft Edge en modo ventana app nativa (Windows 10 / Windows 11)
-if exist "%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe" (
-    start "" "%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe" --start-fullscreen --app="%URL_APP%" --user-data-dir="%~dp0data\.perfil_navegador" --no-first-run
-    goto fin_lanzador
+:: v1.4.4 (fix real subido): abrir SIEMPRE el navegador PRED_TERMINADO del usuario,
+:: detectandolo via registro de Windows (UserChoice -> ProgId). Antes el .bat probaba
+:: Edge primero sin consultar el predeterminado, por eso abria Edge aunque Chrome fuera
+:: el navegador por defecto. Modo ventana MAXIMIZADA (--start-maximized), no fullscreen.
+set "NAVEGADOR_EXE="
+for /f "tokens=2 del==" %%P in ('reg query "HKCU\Software\Microsoft\Windows\Shell\Associations\UrlAssociations\http\UserChoice" /v ProgId 2^>nul') do set "PROGID=%%P"
+if defined PROGID (
+    if /i "!PROGID:~0,5!"=="Chrome" set "BF=_chrome_"
+    if /i "!PROGID:~0,7!"=="Firefox" set "BF=_firefox_"
+    if /i "!PROGID:~0,7!"=="Opera" set "BF=_opera_"
+    if /i "!PROGID:~0,9!"=="BraveHTML" set "BF=_brave_"
+    if /i "!PROGID:~0,7!"=="EdgeHtm" set "BF=_edge_"
 )
-if exist "%ProgramFiles%\Microsoft\Edge\Application\msedge.exe" (
-    start "" "%ProgramFiles%\Microsoft\Edge\Application\msedge.exe" --start-fullscreen --app="%URL_APP%" --user-data-dir="%~dp0data\.perfil_navegador" --no-first-run
-    goto fin_lanzador
+for %%B in (_chrome_ _edge_ _brave_ _opera_ _firefox_) do (
+    if not defined NAVEGADOR_EXE if "%%B"=="!BF!" (
+        for %%R in ("HKLM\SOFTWARE%%Clients%%\%%B" "HKLM\SOFTWARE\WOW6432Node%%Clients%%\%%B" "HKCU\SOFTWARE%%Clients%%\%%B") do (
+            if not defined NAVEGADOR_EXE (
+                for /f "tokens=2*" %%A in ('reg query %%~R /v InstallLocation 2^>nul ^| find /i "InstallLocation"') do (
+                    if not defined NAVEGADOR_EXE if exist "%%B\chrome.exe" set "NAVEGADOR_EXE=%%B\chrome.exe"
+                    if not defined NAVEGADOR_EXE if exist "%%B\msedge.exe" set "NAVEGADOR_EXE=%%B\msedge.exe"
+                    if not defined NAVEGADOR_EXE if exist "%%B\firefox.exe" set "NAVEGADOR_EXE=%%B\firefox.exe"
+                    if not defined NAVEGADOR_EXE if exist "%%B\opera_launcher.exe" set "NAVEGADOR_EXE=%%B\opera_launcher.exe"
+                    if not defined NAVEGADOR_EXE if exist "%%B\brave.exe" set "NAVEGADOR_EXE=%%B\brave.exe"
+                )
+            )
+        )
+    )
 )
-if exist "%LOCALAPPDATA%\Microsoft\Edge\Application\msedge.exe" (
-    start "" "%LOCALAPPDATA%\Microsoft\Edge\Application\msedge.exe" --start-fullscreen --app="%URL_APP%" --user-data-dir="%~dp0data\.perfil_navegador" --no-first-run
+:: Respaldo por rutas estandar segun la familia detectada
+if not defined NAVEGADOR_EXE if defined BF if "!BF!"=="_chrome_" (
+    if exist "%ProgramFiles%\Google\Chrome\Application\chrome.exe" set "NAVEGADOR_EXE=%ProgramFiles%\Google\Chrome\Application\chrome.exe"
+    if not defined NAVEGADOR_EXE if exist "%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe" set "NAVEGADOR_EXE=%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"
+    if not defined NAVEGADOR_EXE if exist "%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe" set "NAVEGADOR_EXE=%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"
+)
+if not defined NAVEGADOR_EXE if defined BF if "!BF!"=="_edge_" (
+    if exist "%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe" set "NAVEGADOR_EXE=%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe"
+    if not defined NAVEGADOR_EXE if exist "%ProgramFiles%\Microsoft\Edge\Application\msedge.exe" set "NAVEGADOR_EXE=%ProgramFiles%\Microsoft\Edge\Application\msedge.exe"
+)
+if not defined NAVEGADOR_EXE if defined BF if "!BF!"=="_firefox_" (
+    if exist "%ProgramFiles%\Mozilla Firefox\firefox.exe" set "NAVEGADOR_EXE=%ProgramFiles%\Mozilla Firefox\firefox.exe"
+    if not defined NAVEGADOR_EXE if exist "%ProgramFiles(x86)%\Mozilla Firefox\firefox.exe" set "NAVEGADOR_EXE=%ProgramFiles(x86)%\Mozilla Firefox\firefox.exe"
+)
+>>"%GF_ARRANQUE%" echo [LANZADOR .BAT] v1.4.4 navegador predeterminado resuelto: "!PROGID!" -^> "!NAVEGADOR_EXE!" %DATE% %TIME%
+
+if defined NAVEGADOR_EXE (
+    start "" "%NAVEGADOR_EXE%" --start-maximized --app="%URL_APP%" --user-data-dir="%~dp0data\.perfil_navegador" --no-first-run
     goto fin_lanzador
 )
 
-:: 2. Google Chrome en modo ventana app nativa
+:: Ultima red de seguridad: cualquier Chrome que exista (antes que Edge, como pide el usuario)
 if exist "%ProgramFiles%\Google\Chrome\Application\chrome.exe" (
-    start "" "%ProgramFiles%\Google\Chrome\Application\chrome.exe" --start-fullscreen --app="%URL_APP%" --user-data-dir="%~dp0data\.perfil_navegador" --no-first-run
+    start "" "%ProgramFiles%\Google\Chrome\Application\chrome.exe" --start-maximized --app="%URL_APP%" --user-data-dir="%~dp0data\.perfil_navegador" --no-first-run
     goto fin_lanzador
 )
 if exist "%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe" (
-    start "" "%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe" --start-fullscreen --app="%URL_APP%" --user-data-dir="%~dp0data\.perfil_navegador" --no-first-run
+    start "" "%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe" --start-maximized --app="%URL_APP%" --user-data-dir="%~dp0data\.perfil_navegador" --no-first-run
     goto fin_lanzador
 )
 if exist "%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe" (
-    start "" "%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe" --start-fullscreen --app="%URL_APP%" --user-data-dir="%~dp0data\.perfil_navegador" --no-first-run
+    start "" "%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe" --start-maximized --app="%URL_APP%" --user-data-dir="%~dp0data\.perfil_navegador" --no-first-run
     goto fin_lanzador
 )
-
-:: 3. Navegador predeterminado de Windows (SIEMPRE seguro y universal)
+:: Si no se pudo resolver nada, usar el predeterminado de Windows tal cual
 start "" "%URL_APP%"
 
 :fin_lanzador

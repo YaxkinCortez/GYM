@@ -75,21 +75,44 @@ Next
 Dim urlApp, navegador
 urlApp = "http://127.0.0.1:3000/login.php"
 navegador = ""
-If fso.FileExists("C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe") Then
-    navegador = "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
-ElseIf fso.FileExists("C:\Program Files\Microsoft\Edge\Application\msedge.exe") Then
-    navegador = "C:\Program Files\Microsoft\Edge\Application\msedge.exe"
-ElseIf fso.FileExists("C:\Program Files\Google\Chrome\Application\chrome.exe") Then
-    navegador = "C:\Program Files\Google\Chrome\Application\chrome.exe"
-ElseIf fso.FileExists("C:\Program Files (x86)\Google\Chrome\Application\chrome.exe") Then
-    navegador = "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"
+' v1.4.4: respetar el navegador PREDETERMINADO del usuario (registro UserChoice),
+' no abrir Edge a la fuerza. Chrome primero si es el predeterminado/existe.
+Dim progId, clave
+On Error Resume Next
+progId = sh.RegRead("HKCU\Software\Microsoft\Windows\Shell\Associations\UrlAssociations\http\UserChoice\ProgId")
+Err.Clear
+On Error GoTo 0
+If InStr(LCase(progId), "chrome") > 0 Or InStr(LCase(progId), "brave") > 0 Or InStr(LCase(progId), "opera") > 0 Then
+    ' Familia Chromium -> preferir Chrome instalado
+    If fso.FileExists("C:\Program Files\Google\Chrome\Application\chrome.exe") Then
+        navegador = "C:\Program Files\Google\Chrome\Application\chrome.exe"
+    ElseIf fso.FileExists("C:\Program Files (x86)\Google\Chrome\Application\chrome.exe") Then
+        navegador = "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"
+    ElseIf fso.FileExists(sh.ExpandEnvironmentStrings("%LOCALAPPDATA%") & "\Google\Chrome\Application\chrome.exe") Then
+        navegador = sh.ExpandEnvironmentStrings("%LOCALAPPDATA%") & "\Google\Chrome\Application\chrome.exe"
+    End If
+End If
+If navegador = "" And InStr(LCase(progId), "firefox") > 0 Then
+    If fso.FileExists("C:\Program Files\Mozilla Firefox\firefox.exe") Then navegador = "C:\Program Files\Mozilla Firefox\firefox.exe"
+End If
+' Respaldo: si no se pudo resolver el predeterminado, Chrome antes que Edge
+If navegador = "" Then
+    If fso.FileExists("C:\Program Files\Google\Chrome\Application\chrome.exe") Then
+        navegador = "C:\Program Files\Google\Chrome\Application\chrome.exe"
+    ElseIf fso.FileExists("C:\Program Files (x86)\Google\Chrome\Application\chrome.exe") Then
+        navegador = "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"
+    ElseIf fso.FileExists(sh.ExpandEnvironmentStrings("%LOCALAPPDATA%") & "\Google\Chrome\Application\chrome.exe") Then
+        navegador = sh.ExpandEnvironmentStrings("%LOCALAPPDATA%") & "\Google\Chrome\Application\chrome.exe"
+    ElseIf fso.FileExists("C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe") Then
+        navegador = "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+    ElseIf fso.FileExists("C:\Program Files\Microsoft\Edge\Application\msedge.exe") Then
+        navegador = "C:\Program Files\Microsoft\Edge\Application\msedge.exe"
+    End If
 End If
 
 If navegador <> "" Then
-    ' v1.4.0: perfil dedicado + start-fullscreen para que la app abra REALMENTE
-    ' a pantalla completa (con el perfil normal del usuario, Edge/Chrome ignora
-    ' --start-fullscreen porque reutiliza una ventana existente sin ese flag).
-    args = " --app=""" & urlApp & """ --start-fullscreen --user-data-dir=""" & carpeta & "\data\.perfil_navegador"" --no-first-run"
+    ' v1.4.3/1.4.4: perfil dedicado + ventana MAXIMIZADA (--start-maximized), no fullscreen total.
+    args = " --app=""" & urlApp & """ --start-maximized --user-data-dir=""" & carpeta & "\data\.perfil_navegador"" --no-first-run"
     sh.Run """" & navegador & """ & args, 1, False
 Else
     sh.Run urlApp, 1, False   ' navegador predeterminado de Windows
